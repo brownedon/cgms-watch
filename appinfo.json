@@ -1,0 +1,19 @@
+{
+    "appKeys": {},
+    "capabilities": [
+        ""
+    ],
+    "companyName": "brownedon@comcast.net",
+    "longName": "CGMS Watch",
+    "projectType": "native",
+    "resources": {
+        "media": []
+    },
+    "shortName": "CGMS Watch",
+    "uuid": "7f7a3890-1a1c-43a3-adf1-21449e4f352d",
+    "versionCode": 1,
+    "versionLabel": "1.0",
+    "watchapp": {
+        "watchface": false
+    }
+}
