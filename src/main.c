@@ -76,11 +76,11 @@ static void window_load(Window *window) {
   //
   //
   //glucose
-  glucose_layer = text_layer_create(GRect(0, 100, 144, 68));
+  glucose_layer = text_layer_create(GRect(20, 100, 144, 68));
   text_layer_set_background_color(glucose_layer, GColorClear);
   text_layer_set_text_color(glucose_layer, GColorWhite);
   text_layer_set_font(glucose_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
-  text_layer_set_text_alignment(glucose_layer, GTextAlignmentCenter);
+  text_layer_set_text_alignment(glucose_layer, GTextAlignmentLeft);
   text_layer_set_text(glucose_layer, glucose);
 
   Tuplet initial_values[] = {
