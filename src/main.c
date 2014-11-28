@@ -136,11 +136,11 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
   text_layer_set_text(alert_layer, " ");
   switch (key) {
     //
-     case GLUCOSESTRING_KEY:
-        APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE STRING KEY");  
+     //case GLUCOSESTRING_KEY:
+     //   APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE STRING KEY");  
         // App Sync keeps new_tuple in sync_buffer, so we may use it directly
-        text_layer_set_text(test_layer, new_tuple->value->cstring);
-        break;
+     //   text_layer_set_text(test_layer, new_tuple->value->cstring);
+     //   break;
     //
      case GLUCOSE_KEY:
         APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE KEY");       
@@ -267,11 +267,11 @@ static void window_load(Window *window) {
   
   //clock
   // Create time TextLayer
-  s_time_layer = text_layer_create(GRect(0, 20, 144, 50));
+  s_time_layer = text_layer_create(GRect(5, 20, 144, 50));
   text_layer_set_background_color(s_time_layer, GColorClear);
   text_layer_set_text_color(s_time_layer, GColorWhite);
   text_layer_set_text(s_time_layer, "00:00");
-  text_layer_set_font(s_time_layer, fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS));
+  text_layer_set_font(s_time_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_MEDIUM_NUMBERS));
   text_layer_set_text_alignment(s_time_layer, GTextAlignmentLeft);
 
   //date layer
