@@ -3,30 +3,167 @@
 static Window *window;
 
 static TextLayer *glucose_layer;
+static TextLayer *timetolimit_layer;
 static TextLayer *s_time_layer;
-
+static TextLayer *alert_layer;
+char buf[5];
 static char glucose[16];
 
 static BitmapLayer *icon_layer;
 static GBitmap *icon_bitmap = NULL;
 
 static AppSync sync;
-static uint8_t sync_buffer[32];
+static uint8_t sync_buffer[64];
+ long last_reading=0;
+ uint8_t miss_count=0;
+int16_t currentGlucose=0;
+int16_t timeToLimit=0;
 
+//slope direction
+static int SLOPE_DOWN = 0x01;
+static int SLOPE_UP = 0x02;
+//
 enum GlucoseKey {
-  GLUCOSE_KEY = 0x1,  // TUPLE_CSTRING
+  GLUCOSESTRING_KEY = 0x0,  
+  GLUCOSE_KEY = 0x1,  
+  ARROW_KEY=0x2,
+  SLOPEDIRECTION_KEY=0x3,
+  TIMETOLIMIT_KEY=0x4,
+  LASTREADING_KEY=0x5
 };
+
+//arrows
+static int ARROW_45_UP = 0x01;
+static int ARROW_UP = 0x02;
+static int ARROW_UP_UP = 0x03;
+static int ARROW_45_DOWN = 0x04;
+static int ARROW_DOWN = 0x05;
+static int ARROW_DOWN_DOWN = 0x06;
+
+static uint8_t ARROW=0x0;
+static uint16_t alertCount=0;
+
 
 static void sync_error_callback(DictionaryResult dict_error, AppMessageResult app_message_error, void *context) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Sync Error: %d", app_message_error);
 }
 
+
+static void alerts(){
+  // Vibe pattern: ON for 200ms, OFF for 100ms, ON for 400ms:
+uint32_t  segments[] = { 200, 100, 200 };
+VibePattern pat = {
+  .durations = segments,
+  .num_segments = ARRAY_LENGTH(segments),
+};
+  
+uint32_t  segments1[] = { 200, 100, 200,100,200 };
+VibePattern pat1 = {
+  .durations = segments1,
+  .num_segments = ARRAY_LENGTH(segments1),
+};
+  
+  
+                //for rapid rise or fall notify every time it occurs
+                if(ARROW==ARROW_DOWN_DOWN){
+                    vibes_enqueue_custom_pattern(pat);
+                }
+            
+                if(ARROW==ARROW_UP_UP){
+                    vibes_enqueue_custom_pattern(pat);
+                }
+            
+                //
+                if (currentGlucose<80 && alertCount==0){
+                   vibes_enqueue_custom_pattern(pat1);
+                }
+                
+                if(currentGlucose<80 && alertCount>0){
+                    alertCount++;
+                    if(alertCount==3){
+                        alertCount=0;
+                    }
+                }
+        
+                if (currentGlucose<60 && alertCount==0){
+                    alertCount++;
+                   vibes_enqueue_custom_pattern(pat1);
+            
+                }
+                if(currentGlucose<60 && alertCount>0){
+                    alertCount++;
+                    if(alertCount>2){
+                        alertCount=0;
+                    }
+                }
+            
+                if(currentGlucose>180 && alertCount==0)
+                {
+                    alertCount++;
+                    vibes_enqueue_custom_pattern(pat1);
+                }
+                
+                if(currentGlucose>180 && alertCount>0){
+                    alertCount++;
+                    if(alertCount==24){
+                        alertCount=0;
+                    }
+                }	
+        
+                if(currentGlucose>80 &&currentGlucose<180){
+                    alertCount=0;
+                }
+
+}
+
 static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
+  long this_reading=0;
+  APP_LOG(APP_LOG_LEVEL_DEBUG,"IN Sync Callback"); 
   switch (key) {
+    //
+     case GLUCOSESTRING_KEY:
+        APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE STRING KEY");  
+        // App Sync keeps new_tuple in sync_buffer, so we may use it directly
+        text_layer_set_text(glucose_layer, new_tuple->value->cstring);
+        break;
+    //
      case GLUCOSE_KEY:
-      // App Sync keeps new_tuple in sync_buffer, so we may use it directly
-      text_layer_set_text(glucose_layer, new_tuple->value->cstring);
+        APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE KEY");       
+        currentGlucose=(new_tuple->value->int16);
+        APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE %i",currentGlucose); 
+        break;
+    //
+     case LASTREADING_KEY:
+        APP_LOG(APP_LOG_LEVEL_DEBUG,"LASTREADING KEY");   
+        this_reading=atol(new_tuple->value->cstring);
+        //if watch hasn't received an update in ~6 minutes, alert user
+        if (this_reading==last_reading){
+          miss_count++;
+          if(miss_count>7){
+            //buzz
+            vibes_double_pulse();
+          }
+        }else{
+          APP_LOG(APP_LOG_LEVEL_DEBUG,"Calling Alerts");   
+          miss_count=0;
+          alerts();
+        }
+        last_reading=this_reading;
+        break;
+    case ARROW_KEY:
+    //
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"ARROW KEY");
+      ARROW=(new_tuple->value->int8);
       break;
+    case SLOPEDIRECTION_KEY:
+    
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"SLOPEDIRECTION KEY");
+      break;
+    //
+    case TIMETOLIMIT_KEY:
+     APP_LOG(APP_LOG_LEVEL_DEBUG,"TIMETOLIMIT KEY");
+     timeToLimit=(new_tuple->value->int16);
+     break;
   }
 }
 
@@ -76,20 +213,55 @@ static void window_load(Window *window) {
   //
   //
   //glucose
-  glucose_layer = text_layer_create(GRect(20, 100, 144, 68));
+  glucose_layer = text_layer_create(GRect(10, 100, 144, 68));
   text_layer_set_background_color(glucose_layer, GColorClear);
   text_layer_set_text_color(glucose_layer, GColorWhite);
-  text_layer_set_font(glucose_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
+  text_layer_set_font(glucose_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(glucose_layer, GTextAlignmentLeft);
   text_layer_set_text(glucose_layer, glucose);
+  
+  //time to limit
+  timetolimit_layer = text_layer_create(GRect(10, 130, 144, 68));
+  text_layer_set_background_color(timetolimit_layer, GColorClear);
+  text_layer_set_text_color(timetolimit_layer, GColorWhite);
+  text_layer_set_font(timetolimit_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
+  text_layer_set_text_alignment(timetolimit_layer, GTextAlignmentLeft);
+  
+  
+  if (timeToLimit<99  && timeToLimit>0){
+    if (SLOPEDIRECTION_KEY==SLOPE_DOWN){
+      snprintf(buf, sizeof(buf), "V %d", timeToLimit);
+    }else{
+     snprintf(buf, sizeof(buf), "^ %d", timeToLimit);
+    }
+  }else{
+    snprintf(buf, sizeof(buf), "    ");
+  }
+  text_layer_set_text(timetolimit_layer, buf);
 
+    //alerts
+  alert_layer = text_layer_create(GRect(120, 130, 144, 68));
+  text_layer_set_background_color(alert_layer, GColorClear);
+  text_layer_set_text_color(alert_layer, GColorWhite);
+  text_layer_set_font(alert_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
+  text_layer_set_text_alignment(alert_layer, GTextAlignmentLeft);
+  text_layer_set_text(alert_layer, " ");
+  
   Tuplet initial_values[] = {
-    TupletCString(GLUCOSE_KEY, "000"),
+    TupletCString(GLUCOSESTRING_KEY,"000" ),  
+    TupletInteger(GLUCOSE_KEY,0),
+    TupletInteger(ARROW_KEY,0),
+    TupletInteger(SLOPEDIRECTION_KEY,0),
+    TupletInteger(TIMETOLIMIT_KEY,0),
+    TupletCString(LASTREADING_KEY,"0")
   };
+  
   app_sync_init(&sync, sync_buffer, sizeof(sync_buffer), initial_values, ARRAY_LENGTH(initial_values),
                 sync_tuple_changed_callback, sync_error_callback, NULL);
 
   layer_add_child(window_layer, text_layer_get_layer(glucose_layer));
+  layer_add_child(window_layer, text_layer_get_layer(timetolimit_layer));
+  layer_add_child(window_layer, text_layer_get_layer(alert_layer));
    
   // Make sure the time is displayed from the start
   update_time();
