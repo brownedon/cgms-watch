@@ -1,12 +1,17 @@
 #include "pebble.h"
 
 static Window *window;
-
+#define _DATE_BUF_LEN 26
+static char _DATE_BUFFER[_DATE_BUF_LEN];
+#define DATE_FORMAT "%l %B %e %T"
 static TextLayer *glucose_layer;
+static TextLayer *test_layer;
 static TextLayer *timetolimit_layer;
 static TextLayer *s_time_layer;
+static TextLayer *date_layer;
 static TextLayer *alert_layer;
 char buf[5];
+char glucbuf[15];
 static char glucose[16];
 
 static BitmapLayer *icon_layer;
@@ -16,12 +21,17 @@ static AppSync sync;
 static uint8_t sync_buffer[64];
  long last_reading=0;
  uint8_t miss_count=0;
+ uint8_t sensor_miss_count=0;
 int16_t currentGlucose=0;
 int16_t timeToLimit=0;
+
+int watchCallbackCount=0;
+int lastWatchCallbackCount=0;
 
 //slope direction
 static int SLOPE_DOWN = 0x01;
 static int SLOPE_UP = 0x02;
+int slopeDirection=0;
 //
 enum GlucoseKey {
   GLUCOSESTRING_KEY = 0x0,  
@@ -50,6 +60,7 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
 
 
 static void alerts(){
+  APP_LOG(APP_LOG_LEVEL_DEBUG,"In Alerts");
   // Vibe pattern: ON for 200ms, OFF for 100ms, ON for 400ms:
 uint32_t  segments[] = { 200, 100, 200 };
 VibePattern pat = {
@@ -118,19 +129,50 @@ VibePattern pat1 = {
 
 static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
   long this_reading=0;
+
   APP_LOG(APP_LOG_LEVEL_DEBUG,"IN Sync Callback"); 
+  //watchCallbackCount++;
+  miss_count=0;
+  text_layer_set_text(alert_layer, " ");
   switch (key) {
     //
      case GLUCOSESTRING_KEY:
         APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE STRING KEY");  
         // App Sync keeps new_tuple in sync_buffer, so we may use it directly
-        text_layer_set_text(glucose_layer, new_tuple->value->cstring);
+        text_layer_set_text(test_layer, new_tuple->value->cstring);
         break;
     //
      case GLUCOSE_KEY:
         APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE KEY");       
         currentGlucose=(new_tuple->value->int16);
         APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE %i",currentGlucose); 
+        snprintf(glucbuf, sizeof(glucbuf), "%i", currentGlucose);
+    
+        if (ARROW==ARROW_45_UP){
+              snprintf(glucbuf, sizeof(glucbuf), "%i  /", currentGlucose);
+        }
+    
+        if (ARROW==ARROW_UP){
+              snprintf(glucbuf, sizeof(glucbuf), "%i  ^", currentGlucose);
+        }
+    
+        if (ARROW==ARROW_UP_UP){
+              snprintf(glucbuf, sizeof(glucbuf), "%i  ^^", currentGlucose);
+        }
+    
+        if (ARROW==ARROW_45_DOWN){
+              snprintf(glucbuf, sizeof(glucbuf), "%i  \\", currentGlucose);
+        }
+    
+        if (ARROW==ARROW_DOWN){
+              snprintf(glucbuf, sizeof(glucbuf), "%i  V", currentGlucose);
+        }
+    
+       if (ARROW==ARROW_DOWN_DOWN){
+              snprintf(glucbuf, sizeof(glucbuf), "%i  VV", currentGlucose);
+       }                
+                       
+        text_layer_set_text(glucose_layer, glucbuf);
         break;
     //
      case LASTREADING_KEY:
@@ -138,14 +180,15 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         this_reading=atol(new_tuple->value->cstring);
         //if watch hasn't received an update in ~6 minutes, alert user
         if (this_reading==last_reading){
-          miss_count++;
-          if(miss_count>7){
+          sensor_miss_count++;
+          if(sensor_miss_count>7){
             //buzz
             vibes_double_pulse();
+            text_layer_set_text(alert_layer, "!!");
           }
         }else{
           APP_LOG(APP_LOG_LEVEL_DEBUG,"Calling Alerts");   
-          miss_count=0;
+          sensor_miss_count=0;
           alerts();
         }
         last_reading=this_reading;
@@ -156,13 +199,25 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       ARROW=(new_tuple->value->int8);
       break;
     case SLOPEDIRECTION_KEY:
-    
       APP_LOG(APP_LOG_LEVEL_DEBUG,"SLOPEDIRECTION KEY");
+      slopeDirection=(new_tuple->value->int8);
       break;
     //
     case TIMETOLIMIT_KEY:
      APP_LOG(APP_LOG_LEVEL_DEBUG,"TIMETOLIMIT KEY");
      timeToLimit=(new_tuple->value->int16);
+     APP_LOG(APP_LOG_LEVEL_DEBUG,"Timetolimit %d",timeToLimit);
+     if (timeToLimit<99  && timeToLimit>0){
+        if (slopeDirection==SLOPE_DOWN){
+          snprintf(buf, sizeof(buf), "V %d", timeToLimit);
+        }
+        if (slopeDirection==SLOPE_UP){
+          snprintf(buf, sizeof(buf), "^ %d", timeToLimit);
+        }
+     }else{
+       snprintf(buf, sizeof(buf), "   ");
+     }
+     text_layer_set_text(timetolimit_layer, buf);
      break;
   }
 }
@@ -174,27 +229,40 @@ static void update_time() {
 
   // Create a long-lived buffer
   static char buffer[] = "00:00";
-
+  static char buffer1[] = "00:00";
   // Write the current hours and minutes into the buffer
   if(clock_is_24h_style() == true) {
     //Use 2h hour format
     strftime(buffer, sizeof("00:00"), "%H:%M", tick_time);
   } else {
     //Use 12 hour format
-    strftime(buffer, sizeof("00:00"), "%I:%M", tick_time);
+    strftime(buffer,  sizeof("00:00"), "%l:%M", tick_time);
+    
+    // Display this time on the TextLayer
+    text_layer_set_text(s_time_layer, buffer);
+    
+    strftime(buffer1,  sizeof("00/00"), "%m/%e", tick_time);
+    // Display this time on the TextLayer
+    text_layer_set_text(date_layer, buffer1);
   }
 
-  // Display this time on the TextLayer
-  text_layer_set_text(s_time_layer, buffer);
+
 }
   
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   update_time();
+  miss_count++;
+
+  if(miss_count>7){
+    vibes_double_pulse();
+    text_layer_set_text(alert_layer, "!");
+    miss_count=0;
+  }
 }
-  
 
 
 static void window_load(Window *window) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG,"Window Load");
   Layer *window_layer = window_get_root_layer(window);
   
   //clock
@@ -203,20 +271,31 @@ static void window_load(Window *window) {
   text_layer_set_background_color(s_time_layer, GColorClear);
   text_layer_set_text_color(s_time_layer, GColorWhite);
   text_layer_set_text(s_time_layer, "00:00");
+  text_layer_set_font(s_time_layer, fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS));
+  text_layer_set_text_alignment(s_time_layer, GTextAlignmentLeft);
 
-  // Improve the layout to be more like a watchface
-  text_layer_set_font(s_time_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD));
-  text_layer_set_text_alignment(s_time_layer, GTextAlignmentCenter);
-
-  // Add it as a child layer to the Window's root layer
-  layer_add_child(window_layer, text_layer_get_layer(s_time_layer));
+  //date layer
+  date_layer = text_layer_create(GRect(90, 20, 144, 50));
+  text_layer_set_background_color(date_layer, GColorClear);
+  text_layer_set_text_color(date_layer, GColorWhite);
+  text_layer_set_text(date_layer, "00/00");
+  text_layer_set_font(date_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
+  text_layer_set_text_alignment(date_layer, GTextAlignmentLeft);
+ 
   //
   //
+  //test
+  test_layer = text_layer_create(GRect(10, 60, 144, 68));
+  text_layer_set_background_color(test_layer, GColorClear);
+  text_layer_set_text_color(test_layer, GColorWhite);
+  text_layer_set_font(test_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
+  text_layer_set_text_alignment(test_layer, GTextAlignmentLeft);
+
   //glucose
-  glucose_layer = text_layer_create(GRect(10, 100, 144, 68));
+  glucose_layer = text_layer_create(GRect(10, 90, 144, 68));
   text_layer_set_background_color(glucose_layer, GColorClear);
   text_layer_set_text_color(glucose_layer, GColorWhite);
-  text_layer_set_font(glucose_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
+  text_layer_set_font(glucose_layer, fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS));
   text_layer_set_text_alignment(glucose_layer, GTextAlignmentLeft);
   text_layer_set_text(glucose_layer, glucose);
   
@@ -226,26 +305,13 @@ static void window_load(Window *window) {
   text_layer_set_text_color(timetolimit_layer, GColorWhite);
   text_layer_set_font(timetolimit_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(timetolimit_layer, GTextAlignmentLeft);
-  
-  
-  if (timeToLimit<99  && timeToLimit>0){
-    if (SLOPEDIRECTION_KEY==SLOPE_DOWN){
-      snprintf(buf, sizeof(buf), "V %d", timeToLimit);
-    }else{
-     snprintf(buf, sizeof(buf), "^ %d", timeToLimit);
-    }
-  }else{
-    snprintf(buf, sizeof(buf), "    ");
-  }
-  text_layer_set_text(timetolimit_layer, buf);
 
-    //alerts
+  //alerts
   alert_layer = text_layer_create(GRect(120, 130, 144, 68));
   text_layer_set_background_color(alert_layer, GColorClear);
   text_layer_set_text_color(alert_layer, GColorWhite);
   text_layer_set_font(alert_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(alert_layer, GTextAlignmentLeft);
-  text_layer_set_text(alert_layer, " ");
   
   Tuplet initial_values[] = {
     TupletCString(GLUCOSESTRING_KEY,"000" ),  
@@ -258,7 +324,10 @@ static void window_load(Window *window) {
   
   app_sync_init(&sync, sync_buffer, sizeof(sync_buffer), initial_values, ARRAY_LENGTH(initial_values),
                 sync_tuple_changed_callback, sync_error_callback, NULL);
-
+  
+  layer_add_child(window_layer, text_layer_get_layer(s_time_layer));
+  layer_add_child(window_layer, text_layer_get_layer(date_layer));
+  layer_add_child(window_layer, text_layer_get_layer(test_layer));
   layer_add_child(window_layer, text_layer_get_layer(glucose_layer));
   layer_add_child(window_layer, text_layer_get_layer(timetolimit_layer));
   layer_add_child(window_layer, text_layer_get_layer(alert_layer));
@@ -276,7 +345,11 @@ static void window_unload(Window *window) {
   } 
 
   text_layer_destroy(glucose_layer);
+  text_layer_destroy(test_layer);
+  text_layer_destroy(alert_layer);
+  text_layer_destroy(timetolimit_layer);
   text_layer_destroy(s_time_layer);
+  text_layer_destroy(date_layer);
   bitmap_layer_destroy(icon_layer);
 }
 
