@@ -9,6 +9,7 @@
     "resources": {
         "media": []
     },
+    "sdkVersion": "2",
     "shortName": "CGMS Watch",
     "uuid": "7f7a3890-1a1c-43a3-adf1-21449e4f352d",
     "versionCode": 1,

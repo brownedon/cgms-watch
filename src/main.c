@@ -54,6 +54,12 @@ static int ARROW_DOWN_DOWN = 0x06;
 static uint8_t ARROW=0x0;
 static uint16_t alertCount=0;
 
+ // Vibe pattern: ON for 400ms, OFF for 400ms ect:
+uint32_t  segments[] = { 400, 400, 400,400, 400, 400, 400, 400, 400,400, 400, 400 };
+VibePattern pat = {
+  .durations = segments,
+  .num_segments = ARRAY_LENGTH(segments),
+};
 //accel
 
 // Total Steps (TS)
@@ -299,19 +305,6 @@ static void alerts(){
   
   // accel_data_handler ();
   
-  // Vibe pattern: ON for 200ms, OFF for 100ms, ON for 400ms:
-uint32_t  segments[] = { 200, 100, 200,100, 200, 100 };
-VibePattern pat = {
-  .durations = segments,
-  .num_segments = ARRAY_LENGTH(segments),
-};
-  
-uint32_t  segments1[] = { 200, 100, 200,100,200 };
-VibePattern pat1 = {
-  .durations = segments1,
-  .num_segments = ARRAY_LENGTH(segments1),
-};
-  
   
                 //for rapid rise or fall notify every time it occurs
                 if(ARROW==ARROW_DOWN_DOWN){
@@ -324,7 +317,8 @@ VibePattern pat1 = {
             
                 //
                 if (currentGlucose<80 && alertCount==0 && currentGlucose>60){
-                   vibes_enqueue_custom_pattern(pat1);
+                   alertCount++;
+                   vibes_enqueue_custom_pattern(pat);
                 }
                 
                 if(currentGlucose<80 && alertCount>0  && currentGlucose>60){
@@ -336,12 +330,11 @@ VibePattern pat1 = {
         
                 if (currentGlucose<60 && alertCount==0){
                     alertCount++;
-                   vibes_enqueue_custom_pattern(pat1);
-            
+                    vibes_enqueue_custom_pattern(pat);
                 }
                 if(currentGlucose<60 && alertCount>0){
                     alertCount++;
-                    if(alertCount>2){
+                    if(alertCount==2){
                         alertCount=0;
                     }
                 }
@@ -349,7 +342,7 @@ VibePattern pat1 = {
                 if(currentGlucose>180 && alertCount==0)
                 {
                     alertCount++;
-                    vibes_enqueue_custom_pattern(pat1);
+                    vibes_enqueue_custom_pattern(pat);
                 }
                 
                 if(currentGlucose>180 && alertCount>0){
@@ -502,9 +495,9 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   update_time();
   miss_count++;
  APP_LOG(APP_LOG_LEVEL_DEBUG,"In tick handler %i, %i",miss_count,sensor_miss_count); 
-  if(miss_count>7){
+  if(miss_count>11){
     APP_LOG(APP_LOG_LEVEL_DEBUG,"Miss recorded"); 
-    vibes_double_pulse();
+    vibes_enqueue_custom_pattern(pat);
     text_layer_set_text(alert_layer, "!!");
     miss_count=0;
   }
