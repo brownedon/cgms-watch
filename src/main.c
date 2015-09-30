@@ -60,52 +60,15 @@ VibePattern pat = {
   .durations = segments,
   .num_segments = ARRAY_LENGTH(segments),
 };
-//accel
 
-// Total Steps (TS)
-#define TS 1
-// Total Steps Default (TSD)
-#define TSD 1
+uint32_t  segments_short[] = { 400, 400 };
+VibePattern pat_short = {
+  .durations = segments_short,
+  .num_segments = ARRAY_LENGTH(segments_short),
+};
 
-// Timer used to determine next step check
-static AppTimer *timer;
-
-// interval to check for next step (in ms)
-const int ACCEL_STEP_MS = 475;
-// value to auto adjust step acceptance 
-const int PED_ADJUST = 2;
-// steps required per calorie
-const int STEPS_PER_CALORIE = 22;
-// value by which step goal is incremented
-const int STEP_INCREMENT = 50;
-// values for max/min number of calibration options 
-const int MAX_CALIBRATION_SETTINGS = 3;
-const int MIN_CALIBRATION_SETTINGS = 1;
-
-int X_DELTA = 45;
-int Y_DELTA, Z_DELTA = 235;
-int YZ_DELTA_MIN = 225;
-int YZ_DELTA_MAX = 245; 
-int X_DELTA_TEMP, Y_DELTA_TEMP, Z_DELTA_TEMP = 0;
-int lastX, lastY, lastZ, currX, currY, currZ = 0;
-int sensitivity = 1;
-
-long stepGoal = 0;
-int  pedometerCount = 0;
-long caloriesBurned = 0;
-long tempTotal = 0;
-
-bool did_pebble_vibrate = false;
-bool validX, validY, validZ = false;
-bool SID;
-bool isDark;
-bool startedSession = true;
-//
-//
 bool msg_run = false;
 
-//
-//
 char *translate_error(AppMessageResult result) {
   switch (result) {
     case APP_MSG_OK: return "APP_MSG_OK";
@@ -131,7 +94,6 @@ char *translate_error(AppMessageResult result) {
 void out_sent_handler(DictionaryIterator *sent, void *context) {
     // outgoing message was delivered
     APP_LOG(APP_LOG_LEVEL_DEBUG, "****DICTIONARY SENT SUCCESSFULLY!****");
-    pedometerCount=0;
     msg_run = false;
 }
 
@@ -145,11 +107,6 @@ void out_failed_handler(DictionaryIterator *failed, AppMessageResult reason, voi
 
 }
 
-static void appmsg_in_dropped(AppMessageResult reason, void *context) {
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "In dropped: %i", reason);
-   APP_LOG(APP_LOG_LEVEL_DEBUG, "In dropped: %i - %s", reason, translate_error(reason));
-}
-
 
 static void sync_error_callback(DictionaryResult dict_error, AppMessageResult app_message_error, void *context) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Sync Error: %d", app_message_error);
@@ -157,154 +114,11 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
 }
 
 
-void accel_data_handler (){
- 
-   //memset(&sync_buffer,0,sizeof(sync_buffer));
-  DictionaryIterator *iter;
-    // create dictionary object
-    app_message_outbox_begin(&iter);
-    
-    Tuplet val = TupletInteger(0,pedometerCount);
-    dict_write_tuplet(iter, &val);
-    pedometerCount=0;
-
-    // send dictionary to phone
-    app_message_outbox_send();
-   // app_sync_deinit(&sync);
-}
-
-
-////
-////
-////
-//accel
-void autoCorrectZ(){
-	if (Z_DELTA > YZ_DELTA_MAX){
-		Z_DELTA = YZ_DELTA_MAX; 
-	} else if (Z_DELTA < YZ_DELTA_MIN){
-		Z_DELTA = YZ_DELTA_MIN;
-	}
-}
-
-void autoCorrectY(){
-	if (Y_DELTA > YZ_DELTA_MAX){
-		Y_DELTA = YZ_DELTA_MAX; 
-	} else if (Y_DELTA < YZ_DELTA_MIN){
-		Y_DELTA = YZ_DELTA_MIN;
-	}
-}
-
-void pedometer_update() {
-	if (startedSession) {
-		X_DELTA_TEMP = abs(abs(currX) - abs(lastX));
-		if (X_DELTA_TEMP >= X_DELTA) {
-			validX = true;
-		}
-		Y_DELTA_TEMP = abs(abs(currY) - abs(lastY));
-		if (Y_DELTA_TEMP >= Y_DELTA) {
-			validY = true;
-			if (Y_DELTA_TEMP - Y_DELTA > 200){
-				autoCorrectY();
-				Y_DELTA = (Y_DELTA < YZ_DELTA_MAX) ? Y_DELTA + PED_ADJUST : Y_DELTA;
-			} else if (Y_DELTA - Y_DELTA_TEMP > 175){
-				autoCorrectY();
-				Y_DELTA = (Y_DELTA > YZ_DELTA_MIN) ? Y_DELTA - PED_ADJUST : Y_DELTA;
-			}
-		}
-		Z_DELTA_TEMP = abs(abs(currZ) - abs(lastZ));
-		if (abs(abs(currZ) - abs(lastZ)) >= Z_DELTA) {
-			validZ = true;
-			if (Z_DELTA_TEMP - Z_DELTA > 200){
-				autoCorrectZ();
-				Z_DELTA = (Z_DELTA < YZ_DELTA_MAX) ? Z_DELTA + PED_ADJUST : Z_DELTA;
-			} else if (Z_DELTA - Z_DELTA_TEMP > 175){
-				autoCorrectZ();
-				Z_DELTA = (Z_DELTA < YZ_DELTA_MAX) ? Z_DELTA + PED_ADJUST : Z_DELTA;
-			}
-		}
-	} else {
-		startedSession = true;
-	}
-}
-
-void resetUpdate() {
-	lastX = currX;
-	lastY = currY;
-	lastZ = currZ;
-	validX = false;
-	validY = false;
-	validZ = false;
-}
-
-
-static void timer_callback(void *data) {
-  //APP_LOG(APP_LOG_LEVEL_DEBUG,"timer_callback");
-	AccelData accel = (AccelData ) { .x = 0, .y = 0, .z = 0 };
-	accel_service_peek(&accel);
-  //APP_LOG(APP_LOG_LEVEL_DEBUG,"xyz %i,%i,%i",accel.x,accel.y,accel.z);
-	if (!startedSession) {
-		lastX = accel.x;
-		lastY = accel.y;
-		lastZ = accel.z;
-	} else {
-		currX = accel.x;
-		currY = accel.y;
-		currZ = accel.z;
-	}
-	
-	did_pebble_vibrate = accel.did_vibrate;
-
-	pedometer_update();
-	//update_ui_callback();
-	if ((validX && validY && !did_pebble_vibrate) || (validX && validZ && !did_pebble_vibrate)) {
-    //APP_LOG(APP_LOG_LEVEL_DEBUG,"Update UI Callback");
-		pedometerCount++;
-		tempTotal++;
-
-		caloriesBurned = (int) (pedometerCount / STEPS_PER_CALORIE);
-		static char calBuf[] = "123456890abcdefghijkl";
-		snprintf(calBuf, sizeof(calBuf), "%ld Calories", caloriesBurned);
-		//text_layer_set_text(calories, calBuf);
-
-		static char buf[] = "123456890abcdefghijkl";
-		snprintf(buf, sizeof(buf), "%i", pedometerCount);
-		//text_layer_set_text(pedCount, buf);
-
-		static char buf2[] = "123456890abcdefghijkl";
-		snprintf(buf2, sizeof(buf2), "%ld in Total", tempTotal);
-		//menu_items[2].subtitle = buf2;
-
-		static char buf3[] = "1234567890abcdefg";
-		snprintf(buf3, sizeof(buf3), "%ld Burned",
-				(long) (tempTotal / STEPS_PER_CALORIE));
-
-	}
-
-	resetUpdate();
-  //
-	//layer_mark_dirty(window_get_root_layer(pedometer));
-	timer = app_timer_register(ACCEL_STEP_MS, timer_callback, NULL);
-}
-
-
-void handle_deinit(void) {
-	//totalSteps += pedometerCount;
-	//persist_write_int(TS, totalSteps);
-	//persist_write_bool(SID, isDark);
-	accel_data_service_unsubscribe();
-	//window_destroy(menu_window);
-}
-
-
-
   //should be called every ~5 minutes
   //triggered by change in reading time from dexcom
 static void alerts(){
 
   APP_LOG(APP_LOG_LEVEL_DEBUG,"In Alerts");
-  
-  // accel_data_handler ();
-  
   
                 //for rapid rise or fall notify every time it occurs
                 if(ARROW==ARROW_DOWN_DOWN){
@@ -345,6 +159,12 @@ static void alerts(){
                     vibes_enqueue_custom_pattern(pat);
                 }
                 
+                //quick alert whenever predicted to be at high or low limit
+                if(timeToLimit==1)
+                {
+                    vibes_enqueue_custom_pattern(pat_short);
+                }
+  
                 if(currentGlucose>180 && alertCount>0){
                     alertCount++;
                     if(alertCount==24){
@@ -609,11 +429,6 @@ static void init() {
     .load = window_load,
     .unload = window_unload
   });
-
-  //app_comm_set_sniff_interval(SNIFF_INTERVAL_REDUCED);
-  //app_message_register_inbox_dropped(appmsg_in_dropped);
-  //app_message_register_outbox_sent(out_sent_handler);
-  //app_message_register_outbox_failed(out_failed_handler);
   
   const int inbound_size = 64;
   const int outbound_size = 64;
@@ -622,10 +437,6 @@ static void init() {
 
   // Register with TickTimerService
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
-  
-  //accel timer  
-  //accel_data_service_subscribe(0, NULL);
-  //timer = app_timer_register(ACCEL_STEP_MS, timer_callback, NULL);
   
   const bool animated = true;
   window_stack_push(window, animated);
