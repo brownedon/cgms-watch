@@ -1,4 +1,5 @@
 #include "pebble.h"
+#include<math.h>
 
 static Window *window;
 #define _DATE_BUF_LEN 26
@@ -12,35 +13,49 @@ static TextLayer *date_layer;
 static TextLayer *alert_layer;
 char buf[5];
 char glucbuf[15];
+char testbuf[15];
 static char glucose[16];
 
 static BitmapLayer *icon_layer;
 static GBitmap *icon_bitmap = NULL;
 
 static AppSync sync;
-static uint8_t sync_buffer[128];
- long last_reading=0;
+//static uint8_t sync_buffer[128];
+static uint8_t sync_buffer[256];
+ int32_t last_reading=0;
  uint8_t miss_count=0;
  uint8_t sensor_miss_count=0;
-int16_t currentGlucose=0;
+int32_t currentGlucose=0;
 int16_t lastGlucose=0;
 int16_t timeToLimit=0;
 
+int32_t slope=700;
+int32_t intercept=30000;
+long isig=0;
+
 int watchCallbackCount=0;
 int lastWatchCallbackCount=0;
-
 
 //slope direction
 static int SLOPE_DOWN = 0x01;
 static int SLOPE_UP = 0x02;
 int slopeDirection=0;
 //
+
+//persist slope and intercept
+//values provided when paired with phone
+#define SLOPEKEY 700
+#define INTERCEPTKEY 30000
+
 enum GlucoseKey {
   GLUCOSE_KEY = 0x1,  
   ARROW_KEY=0x2,
   SLOPEDIRECTION_KEY=0x3,
   TIMETOLIMIT_KEY=0x4,
-  LASTREADING_KEY=0x5
+  LASTREADING_KEY=0x5,
+  slopeKey=0x6,
+  interceptKey=0x7,
+  isigKey=0x8
 };
 
 //arrows
@@ -89,7 +104,71 @@ char *translate_error(AppMessageResult result) {
   }
 }
 
+struct readings {
+  long seconds;
+  int glucose;
+};
 
+struct readings readings_arr[76];
+struct readings reading;
+
+void initReadings(){
+  reading.seconds=0;
+  reading.glucose=0;
+  for (int i=0; i>12; i++ ) {  
+    readings_arr[i].seconds=reading.seconds;
+    readings_arr[i].glucose=reading.glucose;
+  }
+}
+
+void addReading(int glucose) {
+  //move everything in the array over 1 place
+  //then add the new values
+  for (int i = 12; i > 0; i-- ) {
+    readings_arr[i].seconds = readings_arr[i - 1].seconds;
+    readings_arr[i].glucose = readings_arr[i - 1].glucose;
+  }
+
+  time_t sec1;
+  uint16_t ms1;
+  time_ms(&sec1, &ms1);
+  
+  readings_arr[0].seconds = ms1/1000;
+  readings_arr[0].glucose = glucose;
+
+}
+
+float getSlopeGlucose() {
+
+  int count = 0;
+  float sumx = 0.0, sumy = 0.0, sum1 = 0.0, sum2 = 0.0;
+
+  for (int i = 0; i < 3; i++ ) {
+    if (readings_arr[i].glucose > 20) {
+      count++;
+      sumx = sumx + readings_arr[i].seconds / 60;
+      sumy = sumy + readings_arr[i].glucose;
+    }
+  }
+
+  float xmean = sumx / count;
+  float ymean = sumy / count;
+
+  for (int i = 0; i < count; i ++) {
+    if (readings_arr[i].glucose > 20) {
+      sum1 = sum1 + (readings_arr[i].seconds / 60 - xmean) * (readings_arr[i].glucose - ymean);
+      sum2 = sum2 + pow((readings_arr[i].seconds / 60 - xmean), 2);
+    }
+  }
+
+  // derive the least squares equation
+  if (sum2 == 0) {
+    return 0;
+  }
+  float slope = sum1 / sum2;
+ 
+  return slope;
+};
 
 void out_sent_handler(DictionaryIterator *sent, void *context) {
     // outgoing message was delivered
@@ -178,9 +257,30 @@ static void alerts(){
 
 }
 
+static void update_time() {
+  // Get a tm structure
+  time_t temp = time(NULL); 
+  struct tm *tick_time = localtime(&temp);
+
+  // Create a long-lived buffer
+  static char buffer[] = "00:00";
+  static char buffer1[] = "Mon     00:00";
+  // Write the current hours and minutes into the buffer
+    //Use 12 hour format
+    strftime(buffer,  sizeof("00:00"), "%l:%M", tick_time);
+    
+    // Display this time on the TextLayer
+    text_layer_set_text(s_time_layer, buffer);
+    
+    strftime(buffer1,  sizeof("Mon  00/00"), "%a  %m/%e", tick_time);
+    // Display this time on the TextLayer
+    text_layer_set_text(date_layer, buffer1);
+
+
+}
 
 static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
-  long this_reading=0;
+  int32_t this_reading=0;
 
   APP_LOG(APP_LOG_LEVEL_DEBUG,"IN Sync Callback"); 
   //APP_LOG(APP_LOG_LEVEL_DEBUG,"Pedometer count %i",pedometerCount);
@@ -189,51 +289,57 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
   //text_layer_set_text(alert_layer, " ");
   switch (key) {
      case GLUCOSE_KEY:
-        APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE KEY");       
-        currentGlucose=(new_tuple->value->int16);
-        APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE %i",currentGlucose); 
-        snprintf(glucbuf, sizeof(glucbuf), "%i", currentGlucose);
+        if(isig==0){
+          APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE KEY");       
+          currentGlucose=(new_tuple->value->int32);
+          
+          APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE %lu",currentGlucose); 
+          snprintf(glucbuf, sizeof(glucbuf), "%lu", currentGlucose);
     
-        if (ARROW==ARROW_45_UP){
-              snprintf(glucbuf, sizeof(glucbuf), "%i  /", currentGlucose);
+          if (ARROW==ARROW_45_UP){
+                snprintf(glucbuf, sizeof(glucbuf), "%lu  /", currentGlucose);
+          }
+    
+          if (ARROW==ARROW_UP){
+                snprintf(glucbuf, sizeof(glucbuf), "%lu  ^", currentGlucose);
+          }
+    
+          if (ARROW==ARROW_UP_UP){
+                snprintf(glucbuf, sizeof(glucbuf), "%lu  ^^", currentGlucose);
+          }
+    
+          if (ARROW==ARROW_45_DOWN){
+                snprintf(glucbuf, sizeof(glucbuf), "%lu  \\", currentGlucose);
+          }
+    
+          if (ARROW==ARROW_DOWN){
+                snprintf(glucbuf, sizeof(glucbuf), "%lu  V", currentGlucose);
+          }
+    
+         if (ARROW==ARROW_DOWN_DOWN){
+                snprintf(glucbuf, sizeof(glucbuf), "%lu  VV", currentGlucose);
+         }                
+         if(abs(lastGlucose-currentGlucose )>25 && lastGlucose!=0 &&currentGlucose!=0){
+            text_layer_set_text(alert_layer, "???");
+          }
+    
+          text_layer_set_text(glucose_layer, glucbuf);
+          addReading( currentGlucose);
+          lastGlucose=currentGlucose;
         }
-    
-        if (ARROW==ARROW_UP){
-              snprintf(glucbuf, sizeof(glucbuf), "%i  ^", currentGlucose);
-        }
-    
-        if (ARROW==ARROW_UP_UP){
-              snprintf(glucbuf, sizeof(glucbuf), "%i  ^^", currentGlucose);
-        }
-    
-        if (ARROW==ARROW_45_DOWN){
-              snprintf(glucbuf, sizeof(glucbuf), "%i  \\", currentGlucose);
-        }
-    
-        if (ARROW==ARROW_DOWN){
-              snprintf(glucbuf, sizeof(glucbuf), "%i  V", currentGlucose);
-        }
-    
-       if (ARROW==ARROW_DOWN_DOWN){
-              snprintf(glucbuf, sizeof(glucbuf), "%i  VV", currentGlucose);
-       }                
-       if(abs(lastGlucose-currentGlucose )>25 && lastGlucose!=0 &&currentGlucose!=0){
-          text_layer_set_text(alert_layer, "???");
-        }
-    
-        text_layer_set_text(glucose_layer, glucbuf);
-        lastGlucose=currentGlucose;
         break;
     //
      case LASTREADING_KEY:
         APP_LOG(APP_LOG_LEVEL_DEBUG,"LASTREADING KEY"); 
-        //APP_LOG(APP_LOG_LEVEL_DEBUG,new_tuple->value->cstring); 
-        this_reading=atol(new_tuple->value->cstring);
+        //APP_LOG(APP_LOG_LEVEL_DEBUG,new_tuple->value->int32); 
+       this_reading=(new_tuple->value->int32);
+       // this_reading=atol(new_tuple->value->cstring);
         APP_LOG(APP_LOG_LEVEL_DEBUG,"%lu %lu",this_reading,last_reading);  
+        //  text_layer_set_text(test_layer,(new_tuple->value->cstring));
         //if watch hasn't received an update in ~6 minutes, alert user
         if (this_reading==last_reading){
           sensor_miss_count++;
-          if(sensor_miss_count>6){
+          if(sensor_miss_count>9){
             APP_LOG(APP_LOG_LEVEL_DEBUG,"Sensor Miss recorded"); 
             //vibes_double_pulse();
             text_layer_set_text(alert_layer, "!");
@@ -277,42 +383,139 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
      }
      text_layer_set_text(timetolimit_layer, buf);
      break;
-  }
-  //
+    //
+    case slopeKey:
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"Slope KEY");
+      slope=(new_tuple->value->int32);
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"Slope %lu",slope);
+      persist_write_int(SLOPEKEY, slope);
+      break;
+    case interceptKey:
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"Intercept KEY");
+      intercept=(new_tuple->value->uint32);
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"Intercept %lu",intercept);
+      persist_write_int(INTERCEPTKEY, intercept);
+      break;
+    case isigKey:
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"ISIG KEY");
+      isig=(new_tuple->value->uint32);
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"ISIG %lu",isig);
 
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"GLUCOSE %lu",currentGlucose); 
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"Intercept %lu",intercept);
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"Slope %lu",slope);
+      
+      if(isig!=0  &&slope!=0 &&intercept!=0){
+        
+        currentGlucose=((isig-intercept)/slope);
+        addReading(currentGlucose);
+        snprintf(glucbuf, sizeof(glucbuf), "%lu", currentGlucose);
+        
+        //snprintf(testbuf, sizeof(testbuf), "%lu", isig);
+
+
+        float tmpSlope=getSlopeGlucose();
+        
+        if (tmpSlope < 0) {
+          //SLOPE_DIRECTION = SLOPE_DOWN;
+          //45 down
+          if (abs(tmpSlope) >= 1)
+            ARROW = ARROW_45_DOWN;
+            //straight down
+          if (abs(tmpSlope) >= 2)
+            ARROW = ARROW_DOWN;
+          if (abs(tmpSlope) >= 3) {
+            ARROW = ARROW_DOWN_DOWN;
+          }
+        }
+    
+        if (tmpSlope > 0) {
+          //SLOPE_DIRECTION = SLOPE_UP;
+          if (tmpSlope >= 1)
+            ARROW = ARROW_45_UP;
+          if (tmpSlope >= 2)
+            ARROW = ARROW_UP;
+          if (tmpSlope >= 3) {
+            ARROW = ARROW_UP_UP;
+          }
+        }
+        
+    
+          if (ARROW==ARROW_45_UP){
+                snprintf(glucbuf, sizeof(glucbuf), "%lu  /", currentGlucose);
+          }
+    
+          if (ARROW==ARROW_UP){
+                snprintf(glucbuf, sizeof(glucbuf), "%lu  ^", currentGlucose);
+          }
+    
+          if (ARROW==ARROW_UP_UP){
+                snprintf(glucbuf, sizeof(glucbuf), "%lu  ^^", currentGlucose);
+          }
+    
+          if (ARROW==ARROW_45_DOWN){
+                snprintf(glucbuf, sizeof(glucbuf), "%lu  \\", currentGlucose);
+          }
+    
+          if (ARROW==ARROW_DOWN){
+                snprintf(glucbuf, sizeof(glucbuf), "%lu  V", currentGlucose);
+          }
+    
+         if (ARROW==ARROW_DOWN_DOWN){
+                snprintf(glucbuf, sizeof(glucbuf), "%lu  VV", currentGlucose);
+         }                
+         if(abs(lastGlucose-currentGlucose )>25 && lastGlucose!=0 &&currentGlucose!=0){
+            text_layer_set_text(alert_layer, "???");
+          }
+    
+      int test=(tmpSlope*100);
+      snprintf(testbuf, sizeof(testbuf), "%i", test);
+        
+       if (tmpSlope > 0 && currentGlucose < 180) {
+         //how long until 180
+         timeToLimit = abs((180 - currentGlucose) / tmpSlope);
+         //since the dex is ~15 minutes behind reality
+         timeToLimit = timeToLimit - 15;
+       }
+       if (tmpSlope < 0 && currentGlucose > 80) {
+         timeToLimit = abs((currentGlucose - 80) / tmpSlope);
+         //since the dex is ~15 minutes behind reality
+         timeToLimit = timeToLimit - 15;
+       }
+        
+     if (timeToLimit<99  && timeToLimit>0){
+        if (tmpSlope>0){
+          snprintf(buf, sizeof(buf), "V %d", timeToLimit);
+        }
+        if (slopeDirection==SLOPE_UP){
+          snprintf(buf, sizeof(buf), "^ %d", timeToLimit);
+        }
+     }else{
+       snprintf(buf, sizeof(buf), "   ");
+     }
+        
+     text_layer_set_text(timetolimit_layer, buf);
+        
+        if(abs(lastGlucose-currentGlucose )>25 && lastGlucose!=0 &&currentGlucose!=0){
+            text_layer_set_text(alert_layer, "???");
+          }
+        
+        text_layer_set_text(glucose_layer, glucbuf);
+        text_layer_set_text(test_layer,testbuf);
+        lastGlucose=currentGlucose;
+        
+        APP_LOG(APP_LOG_LEVEL_DEBUG,"Calc GLUCOSE %lu",currentGlucose); 
+      }
+      break;
+   break;
+  }
 }
 
-static void update_time() {
-  // Get a tm structure
-  time_t temp = time(NULL); 
-  struct tm *tick_time = localtime(&temp);
 
-  // Create a long-lived buffer
-  static char buffer[] = "00:00";
-  static char buffer1[] = "Mon     00:00";
-  // Write the current hours and minutes into the buffer
-  if(clock_is_24h_style() == true) {
-    //Use 2h hour format
-    strftime(buffer, sizeof("00:00"), "%H:%M", tick_time);
-  } else {
-    //Use 12 hour format
-    strftime(buffer,  sizeof("00:00"), "%l:%M", tick_time);
-    
-    // Display this time on the TextLayer
-    text_layer_set_text(s_time_layer, buffer);
-    
-    strftime(buffer1,  sizeof("Mon  00/00"), "%a  %m/%e", tick_time);
-    // Display this time on the TextLayer
-    text_layer_set_text(date_layer, buffer1);
-  }
-
-
-}
   
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   //this also seems to get called when ios connects
   //not just every minute...
-  update_time();
   miss_count++;
  APP_LOG(APP_LOG_LEVEL_DEBUG,"In tick handler %i, %i",miss_count,sensor_miss_count); 
   if(miss_count>11){
@@ -377,12 +580,29 @@ static void window_load(Window *window) {
   text_layer_set_font(alert_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(alert_layer, GTextAlignmentLeft);
   
+    if (persist_exists(SLOPEKEY)) {
+            // Load stored count
+            APP_LOG(APP_LOG_LEVEL_DEBUG,"Using stored slope");
+            slope = persist_read_int(SLOPEKEY);
+    }else{
+      slope=700;
+    }
+          if (persist_exists(INTERCEPTKEY)) {
+           // Load stored count
+           intercept = persist_read_int(INTERCEPTKEY);
+          }else{
+            intercept=30000;
+          }
+  
   Tuplet initial_values[] = {
     TupletInteger(GLUCOSE_KEY,0),
     TupletInteger(ARROW_KEY,0),
     TupletInteger(SLOPEDIRECTION_KEY,0),
     TupletInteger(TIMETOLIMIT_KEY,0),
-    TupletCString(LASTREADING_KEY,"0")
+    TupletCString(LASTREADING_KEY,"0"),
+    TupletInteger(slopeKey,slope),
+    TupletInteger(interceptKey,intercept),
+    TupletInteger(isigKey,0)
   };
   
  app_sync_init(&sync, sync_buffer, sizeof(sync_buffer), initial_values, ARRAY_LENGTH(initial_values),
@@ -395,10 +615,13 @@ static void window_load(Window *window) {
   layer_add_child(window_layer, text_layer_get_layer(timetolimit_layer));
   layer_add_child(window_layer, text_layer_get_layer(alert_layer));
   //
-   miss_count=0;
+  miss_count=0;
   sensor_miss_count=0;
+  initReadings();
   // Make sure the time is displayed from the start
   update_time();
+  
+ 
   
 }
 
@@ -430,8 +653,8 @@ static void init() {
     .unload = window_unload
   });
   
-  const int inbound_size = 64;
-  const int outbound_size = 64;
+  const int inbound_size = 128;
+  const int outbound_size = 128;
   app_message_open(inbound_size, outbound_size);
   
 
