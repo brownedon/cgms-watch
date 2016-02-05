@@ -246,7 +246,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
             vibes_enqueue_custom_pattern(pat);
           }
         }
-
+         
         if (tmpSlope > 0) {
           if (tmpSlope >= 1)
             snprintf(glucbuf, sizeof(glucbuf), "%lu  /", currentGlucose);
@@ -257,7 +257,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
             vibes_enqueue_custom_pattern(pat);
           }
         }
-
+        timeToLimit=99;
         if (tmpSlope > 0 && currentGlucose < 180) {
           //how long until 180
           timeToLimit = abs((180 - currentGlucose) / tmpSlope);
