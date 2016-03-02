@@ -21,9 +21,11 @@ static TextLayer *timetolimit_layer;
 static TextLayer *s_time_layer;
 static TextLayer *date_layer;
 static TextLayer *alert_layer;
+static TextLayer *debug_layer;
 char buf[5];
 char glucbuf[15];
 char testbuf[30];
+char debugbuf[30];
 static char glucose[16];
 int slopecount=0;
 int sleepCount=0;
@@ -65,7 +67,7 @@ void calibrate(int gluc) {
    APP_LOG(APP_LOG_LEVEL_DEBUG,"calibrate");
     if (readings_arr[0].rawcounts > 0) {
         newCal = true;
-        calTime = readings_arr[0].seconds;
+        calTime = readings_arr[0].minutes;
         
         addCalibration(readings_arr[0].rawcounts, gluc);
         
@@ -78,13 +80,13 @@ void calibrate(int gluc) {
 }
 
 void reCalibrate(){
-    APP_LOG(APP_LOG_LEVEL_DEBUG,"CurrentTime %ld",(readings_arr[0].seconds));
+    APP_LOG(APP_LOG_LEVEL_DEBUG,"CurrentTime %ld",(readings_arr[0].minutes));
     APP_LOG(APP_LOG_LEVEL_DEBUG,"CalTime %ld",calTime);
-    if ( readings_arr[0].seconds  - calTime > 1140) { //19 minutes missed readings, clear it
+    if ( readings_arr[0].minutes  - calTime > 16) { //16 minutes missed readings, clear it
       newCal = false;
     }
    
-   if (readings_arr[0].seconds  - calTime > 660) { //11 minutes
+   if (readings_arr[0].minutes  - calTime > 11) { //11 minutes
       APP_LOG(APP_LOG_LEVEL_DEBUG,"Recalc");
       newCal = false;
       updateRawcount(readings_arr[0].rawcounts);
@@ -120,7 +122,7 @@ static SimpleMenuLayer *s_simple_menu_layer;
 static SimpleMenuSection s_menu_sections[1];
 static SimpleMenuItem s_first_menu_items[20];
 
-static char *s_options[15]={"Enter","Reset","Zzz","80","90","100","110","120","130","140","150","160","170","180","190"};
+static char *s_options[16]={"Enter","Reset","Zzz","80","90","100","110","120","130","140","150","160","170","180","190","200"};
 
 char *menuSelection="";
 
@@ -131,9 +133,6 @@ char *menuSelection="";
     addCalibration(30000, 0);
     slope = 703;
     intercept = 30003;
-    
-    persist_write_int(SLOPEKEY, slope);
-    persist_write_int(INTERCEPTKEY, intercept);
 }
 
 void out_sent_handler(DictionaryIterator *sent, void *context) {
@@ -203,7 +202,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Slope KEY");
         slope = (new_tuple->value->int32);
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Slope %lu", slope);
-        persist_write_int(SLOPEKEY, slope);
+        //persist_write_int(SLOPEKEY, slope);
       }
       break;
     case interceptKey:
@@ -211,7 +210,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Intercept KEY");
         intercept = (new_tuple->value->uint32);
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Intercept %lu", intercept);
-        persist_write_int(INTERCEPTKEY, intercept);
+        //persist_write_int(INTERCEPTKEY, intercept);
       }
       break;
     case isigKey:
@@ -228,44 +227,46 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
 
       if (isig != 0  && slope != 0 && intercept != 0 ) {
         currentGlucose = ((isig - intercept) / slope);
-        snprintf(glucbuf, sizeof(glucbuf), "%lu", currentGlucose);
-        snprintf(testbuf, sizeof(testbuf), "%lu %lu", slope, intercept);
-        text_layer_set_text(test_layer, testbuf);
         addReading(currentGlucose, isig);
-        double tmpSlope = getSlopeGlucose();
-
-        if (tmpSlope < 0) {
+        double readingSlope = getSlopeGlucose();
+        //
+        if(readingSlope==0){
+          snprintf(glucbuf, sizeof(glucbuf), "%lu  -", currentGlucose);
+        }else{
+          snprintf(glucbuf, sizeof(glucbuf), "%lu   ", currentGlucose);
+        }
+        if (readingSlope < 0) {
           //45 down
-          if (abs(tmpSlope) >= 1)
+          if (abs(readingSlope) >= 1)
             snprintf(glucbuf, sizeof(glucbuf), "%lu  \\", currentGlucose);
           //straight down
-          if (abs(tmpSlope) >= 2)
+          if (abs(readingSlope) >= 2)
             snprintf(glucbuf, sizeof(glucbuf), "%lu  V", currentGlucose);
-          if (abs(tmpSlope) >= 3) {
+          if (abs(readingSlope) >= 3) {
             snprintf(glucbuf, sizeof(glucbuf), "%lu  VV", currentGlucose);
             vibes_enqueue_custom_pattern(pat);
           }
         }
          
-        if (tmpSlope > 0) {
-          if (tmpSlope >= 1)
+        if (readingSlope > 0) {
+          if (readingSlope >= 1)
             snprintf(glucbuf, sizeof(glucbuf), "%lu  /", currentGlucose);
-          if (tmpSlope >= 2)
+          if (readingSlope >= 2)
             snprintf(glucbuf, sizeof(glucbuf), "%lu  ^", currentGlucose);
-          if (tmpSlope >= 3) {
+          if (readingSlope >= 3) {
             snprintf(glucbuf, sizeof(glucbuf), "%lu  ^^", currentGlucose);
             vibes_enqueue_custom_pattern(pat);
           }
         }
-        timeToLimit=99;
-        if (tmpSlope > 0 && currentGlucose < 180) {
+        timeToLimit=100;
+        if (readingSlope > 0 && currentGlucose < 180) {
           //how long until 180
-          timeToLimit = abs((180 - currentGlucose) / tmpSlope);
+          timeToLimit = abs((180 - currentGlucose) / readingSlope);
           //since the dex is ~15 minutes behind reality
           timeToLimit = timeToLimit - 15;
         }
-        if (tmpSlope < 0 && currentGlucose > 80) {
-          timeToLimit = abs((currentGlucose - 80) / tmpSlope);
+        if (readingSlope < 0 && currentGlucose > 80) {
+          timeToLimit = abs((currentGlucose - 80) / readingSlope);
           //since the dex is ~15 minutes behind reality
           timeToLimit = timeToLimit - 15;
         }
@@ -274,16 +275,15 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         }
 
         if (timeToLimit < 99) {
-          if (tmpSlope < 0) {
+          if (readingSlope < 0) {
             snprintf(buf, sizeof(buf), "V %d", timeToLimit);
           }
-          if (tmpSlope > 0) {
+          if (readingSlope > 0) {
             snprintf(buf, sizeof(buf), "^ %d", timeToLimit);
           }
         } else {
           snprintf(buf, sizeof(buf), "   ");
         }
-        text_layer_set_text(timetolimit_layer, buf);
 
         if (abs(lastGlucose - currentGlucose ) > 25 && lastGlucose != 0 && currentGlucose != 0) {
           text_layer_set_text(alert_layer, "???");
@@ -295,11 +295,22 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
             alerts(currentGlucose,timeToLimit);
           }
         } else {
-          text_layer_set_text(alert_layer, "?");
+            text_layer_set_text(alert_layer, "?");
         }
-        text_layer_set_text(glucose_layer, glucbuf);
         lastGlucose = currentGlucose;
-
+        char sign='+';
+        if (readingSlope<0){
+          sign='-';
+        }
+        snprintf(testbuf, sizeof(testbuf), "%lu %lu %c%d.%d", slope, intercept, sign,abs((int)readingSlope),abs((int)(readingSlope*10)%10));
+        //
+        text_layer_set_text(glucose_layer, glucbuf);
+        text_layer_set_text(test_layer, testbuf);
+        text_layer_set_text(timetolimit_layer, buf);
+        //debug
+        //snprintf(debugbuf,sizeof(debugbuf), "%lu %i",readings_arr[0].minutes,readings_arr[0].glucose);
+        //text_layer_set_text(debug_layer, debugbuf);
+        //
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Calc GLUCOSE %lu", currentGlucose);
       }
       break;
@@ -413,14 +424,9 @@ static void window_load(Window *window) {
     .items = s_first_menu_items
   };
 
-  retrieveReadings();  
-  retrieveCal();
-
   //clock
   // Create time TextLayer
   s_time_layer = text_layer_create(GRect(1, 25, 144, 50));
-  //text_layer_set_background_color(s_time_layer, GColorBlack);
-  //text_layer_set_text_color(s_time_layer, GColorWhite);
   text_layer_set_text(s_time_layer, "00:00");
   text_layer_set_font(s_time_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD));
   text_layer_set_text_alignment(s_time_layer, GTextAlignmentLeft);
@@ -433,7 +439,6 @@ static void window_load(Window *window) {
   text_layer_set_text(date_layer, "00/00");
   text_layer_set_font(date_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
   text_layer_set_text_alignment(date_layer, GTextAlignmentLeft);
-
   //
   //
   //test
@@ -464,6 +469,13 @@ static void window_load(Window *window) {
   text_layer_set_text_color(alert_layer, GColorWhite);
   text_layer_set_font(alert_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(alert_layer, GTextAlignmentLeft);
+
+  //debug
+  debug_layer = text_layer_create(GRect(10, 130, 144, 68));
+  text_layer_set_background_color(debug_layer, GColorClear);
+  text_layer_set_text_color(debug_layer, GColorWhite);
+  text_layer_set_font(debug_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
+  text_layer_set_text_alignment(debug_layer, GTextAlignmentLeft);
 
   if (persist_exists(SLOPEKEY)) {
     // Load stored count
@@ -496,6 +508,7 @@ static void window_load(Window *window) {
   layer_add_child(window_layer, text_layer_get_layer(glucose_layer));
   layer_add_child(window_layer, text_layer_get_layer(timetolimit_layer));
   layer_add_child(window_layer, text_layer_get_layer(alert_layer));
+  layer_add_child(window_layer, text_layer_get_layer(debug_layer));
 
   miss_count = 0;
   sensor_miss_count = 0;
@@ -521,6 +534,9 @@ static void window_unload(Window *window) {
 
 static void init() {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "init");
+  retrieveReadings();
+  retrieveCal(); 
+  
   s_main_window = window_create();
   window_set_click_config_provider(s_main_window, click_config_provider);
   window_set_background_color(s_main_window, GColorBlack);
@@ -542,11 +558,16 @@ static void init() {
 
   const bool animated = true;
   window_stack_push(s_main_window, animated);
+  //alert user that watch has restarted
+  restartAlert();
 }
 
 static void deinit() {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "deinit");
   persistReadings();
+  persistCalibration();
+  persist(SLOPEKEY, slope);
+  persist(INTERCEPTKEY, intercept);
   // Destroy main Window
   window_destroy(s_main_window);
 }

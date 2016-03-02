@@ -35,7 +35,7 @@ struct calibrations {
 };
 
 struct calibrations calibrations_arr[5];
-struct calibrations  calibration;
+struct calibrations calibration;
 
 void initCalibrations() {
   APP_LOG(APP_LOG_LEVEL_DEBUG,"initCalibrations");
@@ -49,35 +49,41 @@ void initCalibrations() {
   }
 }
 
+void persist(int key,long value){
+  while(persist_write_int(key, value)<0){
+    persist_write_int(key,value);
+  }
+}
+
 void persistCalibration() {
   APP_LOG(APP_LOG_LEVEL_DEBUG,"persistCalibration");
   if (calibrations_arr[0].rawcounts != 0) {
-    persist_write_int(calibrations_glucosekey1, calibrations_arr[0].glucose);
-    persist_write_int(calibrations_secondskey1,  calibrations_arr[0].seconds);
-    persist_write_int(calibrations_rawcountkey1,  calibrations_arr[0].rawcounts);
+    persist(calibrations_glucosekey1, calibrations_arr[0].glucose);
+    persist(calibrations_secondskey1,  calibrations_arr[0].seconds);
+    persist(calibrations_rawcountkey1,  calibrations_arr[0].rawcounts);
   }
 
   if (calibrations_arr[1].rawcounts != 0) {
-    persist_write_int(calibrations_glucosekey2, calibrations_arr[1].glucose);
-    persist_write_int(calibrations_secondskey2,  calibrations_arr[1].seconds);
-    persist_write_int(calibrations_rawcountkey2,  calibrations_arr[1].rawcounts);
+    persist(calibrations_glucosekey2, calibrations_arr[1].glucose);
+    persist(calibrations_secondskey2,  calibrations_arr[1].seconds);
+    persist(calibrations_rawcountkey2,  calibrations_arr[1].rawcounts);
   }
 
   if (calibrations_arr[2].rawcounts != 0) {
-    persist_write_int(calibrations_glucosekey3, calibrations_arr[2].glucose);
-    persist_write_int(calibrations_secondskey3,  calibrations_arr[2].seconds);
-    persist_write_int(calibrations_rawcountkey3,  calibrations_arr[2].rawcounts);
+    persist(calibrations_glucosekey3, calibrations_arr[2].glucose);
+    persist(calibrations_secondskey3,  calibrations_arr[2].seconds);
+    persist(calibrations_rawcountkey3,  calibrations_arr[2].rawcounts);
   }
   if (calibrations_arr[3].rawcounts != 0) {
-    persist_write_int(calibrations_glucosekey4, calibrations_arr[3].glucose);
-    persist_write_int(calibrations_secondskey4,  calibrations_arr[3].seconds);
-    persist_write_int(calibrations_rawcountkey4,  calibrations_arr[3].rawcounts);
+    persist(calibrations_glucosekey4, calibrations_arr[3].glucose);
+    persist(calibrations_secondskey4,  calibrations_arr[3].seconds);
+    persist(calibrations_rawcountkey4,  calibrations_arr[3].rawcounts);
   }
 
   if (calibrations_arr[4].rawcounts != 0) {
-    persist_write_int(calibrations_glucosekey5, calibrations_arr[4].glucose);
-    persist_write_int(calibrations_secondskey5,  calibrations_arr[4].seconds);
-    persist_write_int(calibrations_rawcountkey5,  calibrations_arr[4].rawcounts);
+    persist(calibrations_glucosekey5, calibrations_arr[4].glucose);
+    persist(calibrations_secondskey5,  calibrations_arr[4].seconds);
+    persist(calibrations_rawcountkey5,  calibrations_arr[4].rawcounts);
   }
 }
 
@@ -133,14 +139,13 @@ void addCalibration(long rawcounts, int glucose) {
     calibrations_arr[0].seconds = sec1;
     calibrations_arr[0].glucose = glucose;
     calibrations_arr[0].rawcounts = rawcounts;
-    persistCalibration();
   }
 }
 
 void getCalSlopeAndIntercept() {
   APP_LOG(APP_LOG_LEVEL_DEBUG,"getCalSlopeAndIntercept");
   int count = 0;
-  float sumx = 0.0, sumy = 0.0, sum1 = 0.0, sum2 = 0.0;
+  double sumx = 0.0, sumy = 0.0, sum1 = 0.0, sum2 = 0.0;
 
   for (int i = 0; i < 5; i++ ) {
     if (calibrations_arr[i].rawcounts > 0) {
@@ -148,26 +153,16 @@ void getCalSlopeAndIntercept() {
       sumx = sumx + calibrations_arr[i].glucose;
       sumy = sumy + calibrations_arr[i].rawcounts;
       APP_LOG(APP_LOG_LEVEL_DEBUG,"glucose %i rawcounts %ld",calibrations_arr[i].glucose, calibrations_arr[i].rawcounts);
-      //weight the most recent value by using it twice
-      if(i==0){
-        count++;
-        sumx = sumx + calibrations_arr[i].glucose;
-        sumy = sumy + calibrations_arr[i].rawcounts;
-      }
     }
   }
 
-  float xmean = sumx / count;
-  float ymean = sumy / count;
+  double xmean = sumx / count;
+  double ymean = sumy / count;
 
-  for (int i = 0; i < 5; i ++) {
+  for (int i = 0; i < count; i ++) {
     if (calibrations_arr[i].rawcounts > 0) {
-      sum1 = sum1 + (calibrations_arr[i].glucose - xmean) * (calibrations_arr[i].rawcounts - ymean);
-      sum2 = sum2 + pow((calibrations_arr[i].glucose - xmean), 2);
-      if (i==0){
-        sum1 = sum1 + (calibrations_arr[i].glucose - xmean) * (calibrations_arr[i].rawcounts - ymean);
-        sum2 = sum2 + pow((calibrations_arr[i].glucose - xmean), 2);
-      }
+      sum1 = sum1 + ((calibrations_arr[i].glucose - xmean) * (calibrations_arr[i].rawcounts - ymean));
+      sum2 = sum2 + pow(calibrations_arr[i].glucose - xmean, 2);
     }
   }
   if (sum2 == 0) {
@@ -187,11 +182,12 @@ void calcSlopeandInt() {
     
     getCalSlopeAndIntercept();
     APP_LOG(APP_LOG_LEVEL_DEBUG,"Cal %ld:%ld",tmpSlope,tmpIntercept);
-    if ((tmpSlope > 400 && tmpSlope < 2000) && (tmpIntercept < 60000 && tmpIntercept > 10000)) {
+    if ((tmpSlope > 300 && tmpSlope < 2000) && (tmpIntercept < 60000 && tmpIntercept > 10000)) {
         APP_LOG(APP_LOG_LEVEL_DEBUG,"Normal Calc");
         slope = tmpSlope;
         intercept = tmpIntercept;
     } else {
+        //fall back to bootstrap value and most recent calibration
         APP_LOG(APP_LOG_LEVEL_DEBUG,"Exception Calc");
         int tmpGlucose = calibrations_arr[0].glucose;
         int tmpRawcount=calibrations_arr[0].rawcounts;
@@ -201,25 +197,21 @@ void calcSlopeandInt() {
         getCalSlopeAndIntercept();
         //
        APP_LOG(APP_LOG_LEVEL_DEBUG,"Cal %ld:%ld",tmpSlope,tmpIntercept);
-        if ((tmpSlope > 400 && tmpSlope < 2000) && (tmpIntercept < 60000 && tmpIntercept > 10000)) {
+        if ((tmpSlope > 300 && tmpSlope < 2000) && (tmpIntercept < 60000 && tmpIntercept > 10000)) {
             slope = tmpSlope;
             intercept = tmpIntercept;
         } else {
             //this is a bad sensor error that should be handled
+            //reject calibration and fall back to original cal array
            APP_LOG(APP_LOG_LEVEL_DEBUG,"well this was unexpected");
-            slope = 701;
-            intercept = 30001;
+           retrieveCal();
         }
     }
-   while(persist_write_int(SLOPEKEY, slope)<0){
-     persist_write_int(SLOPEKEY,slope);
-   }
-   while(persist_write_int(INTERCEPTKEY, intercept)<0){
-     persist_write_int(INTERCEPTKEY,intercept);
-   }
+    persistCalibration();
+    persist(SLOPEKEY,slope);
+    persist(INTERCEPTKEY,intercept);
 }
 
 void updateRawcount(long rawcount){
   calibrations_arr[0].rawcounts = rawcount;
-  persistCalibration();
 }
