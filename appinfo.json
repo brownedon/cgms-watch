@@ -4,15 +4,18 @@
         ""
     ],
     "companyName": "brownedon@comcast.net",
+    "enableMultiJS": false,
     "longName": "CGMS Watch",
     "projectType": "native",
     "resources": {
         "media": []
     },
-    "sdkVersion": "2",
+    "sdkVersion": "3",
     "shortName": "CGMS Watch",
+    "targetPlatforms": [
+        "basalt"
+    ],
     "uuid": "7f7a3890-1a1c-43a3-adf1-21449e4f352d",
-    "versionCode": 1,
     "versionLabel": "1.0",
     "watchapp": {
         "watchface": false
