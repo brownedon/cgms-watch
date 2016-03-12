@@ -88,21 +88,21 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
 
 static void hands_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
-  GPoint center = grect_center_point(&bounds);
+ // GPoint center = grect_center_point(&bounds);
 
-  const int16_t second_hand_length = PBL_IF_ROUND_ELSE((bounds.size.w / 2) - 19, bounds.size.w / 2);
+  //const int16_t second_hand_length = PBL_IF_ROUND_ELSE((bounds.size.w / 2) - 19, bounds.size.w / 2);
 
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
-  int32_t second_angle = TRIG_MAX_ANGLE * t->tm_sec / 60;
-  GPoint second_hand = {
-    .x = (int16_t)(sin_lookup(second_angle) * (int32_t)second_hand_length / TRIG_MAX_RATIO) + center.x,
-    .y = (int16_t)(-cos_lookup(second_angle) * (int32_t)second_hand_length / TRIG_MAX_RATIO) + center.y,
-  };
+  //int32_t second_angle = TRIG_MAX_ANGLE * t->tm_sec / 60;
+  //GPoint second_hand = {
+  //  .x = (int16_t)(sin_lookup(second_angle) * (int32_t)second_hand_length / TRIG_MAX_RATIO) + center.x,
+  //  .y = (int16_t)(-cos_lookup(second_angle) * (int32_t)second_hand_length / TRIG_MAX_RATIO) + center.y,
+  //};
 
   // second hand
-  graphics_context_set_stroke_color(ctx, GColorWhite);
-  graphics_draw_line(ctx, second_hand, center);
+  //graphics_context_set_stroke_color(ctx, GColorWhite);
+  //graphics_draw_line(ctx, second_hand, center);
 
   // minute/hour hand
   graphics_context_set_fill_color(ctx, GColorWhite);
@@ -132,7 +132,7 @@ static void date_update_proc(Layer *layer, GContext *ctx) {
   text_layer_set_text(s_num_label, s_num_buffer);
 }
 
-static void tick_handler_round() {
+/*static void tick_handler_round() {
  
   miss_count++;
   if (sleepCount>0){
@@ -149,16 +149,16 @@ static void tick_handler_round() {
     text_layer_set_text(alert_layer, " !!");
     miss_count = 0;
   }
-}
+}*/
 
-static void handle_second_tick(struct tm *tick_time, TimeUnits units_changed) {
-  layer_mark_dirty(window_get_root_layer(s_main_window));
-  secondCount++;
-  if(secondCount>59){
-    secondCount=0;
-    tick_handler_round();
-  }
-}
+//static void handle_second_tick(struct tm *tick_time, TimeUnits units_changed) {
+//  layer_mark_dirty(window_get_root_layer(s_main_window));
+//  secondCount++;
+ // if(secondCount>59){
+ //   secondCount=0;
+ //   tick_handler_round();
+ // }
+//}
 // end analog watch
 
 
@@ -371,19 +371,27 @@ static void cgms_display(uint32_t isig){
         }
         #ifdef PEBBLE
         snprintf(testbuf, sizeof(testbuf), "%lu %lu %c%d.%d", slope, intercept, sign,abs((int)readingSlope),abs((int)(readingSlope*10)%10));
+         text_layer_set_text(timetolimit_layer, buf);
         #endif
         #ifdef PEBBLE_ROUND
-        if(readingSlope==0){
+        if((abs((int)readingSlope)==0) && (abs((int)(readingSlope*10)%10)==0)){
           snprintf(testbuf, sizeof(testbuf), " ---\n%lu", slope);
         }else{
           snprintf(testbuf, sizeof(testbuf), "%c%d.%d\n%lu", sign,abs((int)readingSlope),abs((int)(readingSlope*10)%10),slope);
         }
         snprintf(glucbuf, sizeof(glucbuf), "%lu",currentGlucose);
+        if(timeToLimit<99){
+          snprintf(buf, sizeof(buf), "%c%d", sign,timeToLimit);
+        } else {
+          snprintf(buf, sizeof(buf), "    ");
+        }
+        text_layer_set_text(timetolimit_layer, buf);
         #endif
         //
+        
         text_layer_set_text(glucose_layer, glucbuf);
         text_layer_set_text(test_layer, testbuf);
-        text_layer_set_text(timetolimit_layer, buf);
+       
         
         //debug
         //snprintf(debugbuf,sizeof(debugbuf), "%lu %i",readings_arr[0].minutes,readings_arr[0].glucose);
@@ -456,6 +464,10 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   }
   #ifdef PEBBLE
   update_time();
+  #endif
+  //
+  #ifdef PEBBLE_ROUND
+  layer_mark_dirty(window_get_root_layer(s_main_window));
   #endif
 }
 
@@ -630,17 +642,17 @@ static void window_load(Window *window) {
   text_layer_set_text(glucose_layer, glucose);
   
   //time to limit
-  timetolimit_layer = text_layer_create(GRect(115, 70, 144, 68));
+  timetolimit_layer = text_layer_create(GRect(143, 70, 144, 68));
   text_layer_set_background_color(timetolimit_layer, GColorClear);
   text_layer_set_text_color(timetolimit_layer, GColorWhite);
-  text_layer_set_font(timetolimit_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
+  text_layer_set_font(timetolimit_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
   text_layer_set_text_alignment(timetolimit_layer, GTextAlignmentLeft);
   
     //alerts
   alert_layer = text_layer_create(GRect(74, 130, 144, 68));
   text_layer_set_background_color(alert_layer, GColorClear);
   text_layer_set_text_color(alert_layer, GColorWhite);
-  text_layer_set_font(alert_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  text_layer_set_font(alert_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(alert_layer, GTextAlignmentLeft);
   
   #endif
@@ -722,8 +734,8 @@ static void window_load(Window *window) {
   // Make sure the time is displayed from the start
   update_time();
   #endif
-
-  //cgms_display(100000);
+  //display testing, displays bg 170
+  //cgms_display(150000);
 }
 
 static void window_unload(Window *window) {
@@ -803,7 +815,7 @@ static void init() {
     s_tick_paths[i] = gpath_create(&ANALOG_BG_POINTS[i]);
   }
   
-   tick_timer_service_subscribe(SECOND_UNIT, handle_second_tick);
+  // tick_timer_service_subscribe(SECOND_UNIT, handle_second_tick);
   //
   #endif
   //
