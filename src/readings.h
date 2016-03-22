@@ -31,26 +31,32 @@ void initReadings() {
   }
 }
 
+void persistR(int key,long value){
+  while(persist_write_int(key, value)<0){
+    persist_write_int(key,value);
+  }
+}
+
 void persistReadings() {
   APP_LOG(APP_LOG_LEVEL_DEBUG,"persistReadings");
   if (readings_arr[0].glucose != 0) {
-    persist(readings_glucosekey1, readings_arr[0].glucose);
-    persist(readings_minuteskey1,  readings_arr[0].minutes);
-    persist(readings_rawcountskey1,  readings_arr[0].rawcounts);
+    persistR(readings_glucosekey1, readings_arr[0].glucose);
+    persistR(readings_minuteskey1,  readings_arr[0].minutes);
+    persistR(readings_rawcountskey1,  readings_arr[0].rawcounts);
     APP_LOG(APP_LOG_LEVEL_DEBUG,"%i : %ld",readings_arr[0].glucose,readings_arr[0].rawcounts);
   }
 
   if (readings_arr[1].glucose != 0) {
-    persist(readings_glucosekey2, readings_arr[1].glucose);
-    persist(readings_minuteskey2,  readings_arr[1].minutes);
-    persist(readings_rawcountskey2,  readings_arr[1].rawcounts);
+    persistR(readings_glucosekey2, readings_arr[1].glucose);
+    persistR(readings_minuteskey2,  readings_arr[1].minutes);
+    persistR(readings_rawcountskey2,  readings_arr[1].rawcounts);
     APP_LOG(APP_LOG_LEVEL_DEBUG,"%i : %ld",readings_arr[1].glucose,readings_arr[1].rawcounts);
   }
 
   if (readings_arr[2].glucose != 0) {
-    persist(readings_glucosekey3, readings_arr[2].glucose);
-    persist(readings_minuteskey3,  readings_arr[2].minutes);
-    persist(readings_rawcountskey3,  readings_arr[2].rawcounts);
+    persistR(readings_glucosekey3, readings_arr[2].glucose);
+    persistR(readings_minuteskey3,  readings_arr[2].minutes);
+    persistR(readings_rawcountskey3,  readings_arr[2].rawcounts);
     APP_LOG(APP_LOG_LEVEL_DEBUG,"%i : %ld",readings_arr[2].glucose,readings_arr[2].rawcounts);
   }
 }

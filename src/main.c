@@ -14,6 +14,9 @@ static Window *s_main_window;
 //before overwriting stored slope and intercept
 int SLOPE_OVERRIDE=100;
 
+//for testing in emulator
+//#define TESTING
+
 //PEBBLE or PEBBLE_ROUND
 //#define PEBBLE
 #define PEBBLE_ROUND
@@ -28,22 +31,27 @@ static TextLayer *alert_layer;
 static TextLayer *debug_layer;
 char buf[5];
 char glucbuf[15];
-char testbuf[30];
+char testbuf[40];
 char debugbuf[30];
+
+//needs global scope or it won't show in menu
+char intbuf[6];
+
 static char glucose[16];
 int slopecount=0;
 int sleepCount=0;
 static BitmapLayer *icon_layer;
 static GBitmap *icon_bitmap = NULL;
 int menuStatus=0;
+int showint=0;
 static AppSync sync;
 static uint8_t sync_buffer[256];
 uint32_t last_reading = 0;
 uint32_t this_reading = 0;
 uint8_t miss_count = 0;
 uint8_t sensor_miss_count = 0;
-int32_t currentGlucose = 0;
-int16_t lastGlucose = 0;
+int currentGlucose = 0;
+int lastGlucose = 0;
 
 long calTime=0;
 bool newCal=false;
@@ -72,7 +80,20 @@ static TextLayer *s_day_label, *s_num_label;
 static GPath *s_tick_paths[NUM_CLOCK_TICKS];
 static GPath *s_minute_arrow, *s_hour_arrow;
 static char s_num_buffer[4], s_day_buffer[6];
+
+static SimpleMenuLayer *s_simple_menu_layer;
+static SimpleMenuSection s_menu_sections[1];
+static SimpleMenuItem s_first_menu_items[20];
+
+static char *s_options[17]={"Enter","Reset","Zzz","80","90","100","110","120","130","140","150","160","170","180","190","200","30000"};
+
+char *menuSelection="";
 //
+//function declarations
+void addInterceptToMenu();
+
+static void click_config_provider(void *context) ;
+  
 //
 static void bg_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, GColorBlack);
@@ -88,22 +109,10 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
 
 static void hands_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
- // GPoint center = grect_center_point(&bounds);
-
-  //const int16_t second_hand_length = PBL_IF_ROUND_ELSE((bounds.size.w / 2) - 19, bounds.size.w / 2);
 
   time_t now = time(NULL);
   struct tm *t = localtime(&now);
-  //int32_t second_angle = TRIG_MAX_ANGLE * t->tm_sec / 60;
-  //GPoint second_hand = {
-  //  .x = (int16_t)(sin_lookup(second_angle) * (int32_t)second_hand_length / TRIG_MAX_RATIO) + center.x,
-  //  .y = (int16_t)(-cos_lookup(second_angle) * (int32_t)second_hand_length / TRIG_MAX_RATIO) + center.y,
-  //};
-
-  // second hand
-  //graphics_context_set_stroke_color(ctx, GColorWhite);
-  //graphics_draw_line(ctx, second_hand, center);
-
+  
   // minute/hour hand
   graphics_context_set_fill_color(ctx, GColorWhite);
   graphics_context_set_stroke_color(ctx, GColorBlack);
@@ -132,35 +141,15 @@ static void date_update_proc(Layer *layer, GContext *ctx) {
   text_layer_set_text(s_num_label, s_num_buffer);
 }
 
-/*static void tick_handler_round() {
- 
-  miss_count++;
-  if (sleepCount>0){
-    sleepCount--;
-  }
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "In tick handler %i, %i", miss_count, sensor_miss_count);
-  if (miss_count > 6) {
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "One Miss recorded");
-    text_layer_set_text(alert_layer, "  !");
-  }
-  if(miss_count > 11) {
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "Miss recorded");
-    vibes_enqueue_custom_pattern(pat);
-    text_layer_set_text(alert_layer, " !!");
-    miss_count = 0;
-  }
-}*/
+  void resetCal() {
+    APP_LOG(APP_LOG_LEVEL_DEBUG,"resetCal");
+    initCalibrations();
 
-//static void handle_second_tick(struct tm *tick_time, TimeUnits units_changed) {
-//  layer_mark_dirty(window_get_root_layer(s_main_window));
-//  secondCount++;
- // if(secondCount>59){
- //   secondCount=0;
- //   tick_handler_round();
- // }
-//}
-// end analog watch
-
+    addCalibration(30000, 0);
+    slope = 703;
+    intercept = 30003;
+    addInterceptToMenu();
+  }
 
 void calibrate(int gluc) {
    APP_LOG(APP_LOG_LEVEL_DEBUG,"calibrate");
@@ -175,8 +164,63 @@ void calibrate(int gluc) {
         long rc1 = (readings_arr[0].rawcounts) - intercept;
         int glucose = (rc1 / slope);
         readings_arr[0].glucose=glucose;
+     
+        addInterceptToMenu();
     }
 }
+
+static void menu_select_callback(int index, void *ctx){
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "menu select callback");
+  if( s_first_menu_items[index].subtitle==NULL){
+    s_first_menu_items[index].subtitle="Selected";
+  }else{
+    s_first_menu_items[index].subtitle=NULL;
+  }
+  
+  if (*s_first_menu_items[index].title=='E'){
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "enter was selected");
+    for (int i=1;i<15;i++){
+      if(s_first_menu_items[i].subtitle!=NULL && *s_first_menu_items[i].subtitle=='S'){
+        //
+        slopecount=0;
+        if(*s_first_menu_items[i].title=='R'){
+          resetCal();
+          break;
+        }else if (*s_first_menu_items[i].title=='Z'){
+          sleepCount=15; 
+          break;
+        }else{
+          //its a calibration
+          calibrate(atoi(s_first_menu_items[i].title));
+          break;
+        }
+      }
+    }
+     //reset menu
+      for (int i=0;i<15;i++){
+          s_first_menu_items[i].subtitle=NULL;
+      }
+      //hide the layer now    
+    #ifdef PEBBLE
+    layer_remove_child_layers(text_layer_get_layer(s_time_layer));   
+    #endif
+    #ifdef PEBBLE_ROUND
+    layer_remove_child_layers(text_layer_get_layer(glucose_layer));   
+    #endif
+        
+      window_set_click_config_provider(s_main_window, click_config_provider);
+  }
+  layer_mark_dirty(simple_menu_layer_get_layer(s_simple_menu_layer));
+}
+
+
+void addInterceptToMenu(){
+  APP_LOG(APP_LOG_LEVEL_DEBUG,"add addInterceptToMenu");
+
+  snprintf(intbuf, sizeof(intbuf), "%d", intercept);
+  s_first_menu_items[16].title=intbuf;
+}
+
 
 void reCalibrate(){
     APP_LOG(APP_LOG_LEVEL_DEBUG,"CurrentTime %ld",(readings_arr[0].minutes));
@@ -190,7 +234,10 @@ void reCalibrate(){
       newCal = false;
       updateRawcount(readings_arr[0].rawcounts);
       calcSlopeandInt();
+     
+      addInterceptToMenu();
   }
+  
 }
 
 
@@ -217,22 +264,7 @@ char *translate_error(AppMessageResult result) {
   }
 }
 
-static SimpleMenuLayer *s_simple_menu_layer;
-static SimpleMenuSection s_menu_sections[1];
-static SimpleMenuItem s_first_menu_items[20];
 
-static char *s_options[16]={"Enter","Reset","Zzz","80","90","100","110","120","130","140","150","160","170","180","190","200"};
-
-char *menuSelection="";
-
-  void resetCal() {
-    APP_LOG(APP_LOG_LEVEL_DEBUG,"resetCal");
-    initCalibrations();
-
-    addCalibration(30000, 0);
-    slope = 703;
-    intercept = 30003;
-}
 
 void out_sent_handler(DictionaryIterator *sent, void *context) {
   // outgoing message was delivered
@@ -281,10 +313,10 @@ static void cgms_display(uint32_t isig){
    int timeToLimit=100;
       APP_LOG(APP_LOG_LEVEL_DEBUG, "ISIG KEY");
     //  isig = (new_tuple->value->uint32);
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "ISIG %lu", isig);
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "GLUCOSE %lu", currentGlucose);
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Intercept %lu", intercept);
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Slope %lu", slope);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "ISIG %d", (int)isig);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "GLUCOSE %d", currentGlucose);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Intercept %d", intercept);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Slope %d", slope);
 
       if(newCal==true){
         reCalibrate();
@@ -296,30 +328,30 @@ static void cgms_display(uint32_t isig){
         double readingSlope = getSlopeGlucose();
         //
         if(readingSlope==0){
-          snprintf(glucbuf, sizeof(glucbuf), "%lu  -", currentGlucose);
+          snprintf(glucbuf, sizeof(glucbuf), "%d  -", currentGlucose);
         }else{
-          snprintf(glucbuf, sizeof(glucbuf), "%lu  ", currentGlucose);
+          snprintf(glucbuf, sizeof(glucbuf), "%d  ", currentGlucose);
         }
         if (readingSlope < 0) {
           //45 down
           if (abs(readingSlope) >= 1)
-            snprintf(glucbuf, sizeof(glucbuf), "%lu  \\", currentGlucose);
+            snprintf(glucbuf, sizeof(glucbuf), "%d  \\", currentGlucose);
           //straight down
           if (abs(readingSlope) >= 2)
-            snprintf(glucbuf, sizeof(glucbuf), "%lu V", currentGlucose);
+            snprintf(glucbuf, sizeof(glucbuf), "%d V", currentGlucose);
           if (abs(readingSlope) >= 3) {
-            snprintf(glucbuf, sizeof(glucbuf), "%lu  VV", currentGlucose);
+            snprintf(glucbuf, sizeof(glucbuf), "%d  VV", currentGlucose);
             vibes_enqueue_custom_pattern(pat);
           }
         }
          
         if (readingSlope > 0) {
           if (readingSlope >= 1)
-            snprintf(glucbuf, sizeof(glucbuf), "%lu  /", currentGlucose);
+            snprintf(glucbuf, sizeof(glucbuf), "%d  /", currentGlucose);
           if (readingSlope >= 2)
-            snprintf(glucbuf, sizeof(glucbuf), "%lu  ^", currentGlucose);
+            snprintf(glucbuf, sizeof(glucbuf), "%d  ^", currentGlucose);
           if (readingSlope >= 3) {
-            snprintf(glucbuf, sizeof(glucbuf), "%lu  ^^", currentGlucose);
+            snprintf(glucbuf, sizeof(glucbuf), "%d  ^^", currentGlucose);
             vibes_enqueue_custom_pattern(pat);
           }
         }
@@ -341,6 +373,7 @@ static void cgms_display(uint32_t isig){
 
         //timeToLimit=10;
         //readingSlope=2;
+        
         if (timeToLimit < 99) {
           if (readingSlope < 0) {
             snprintf(buf, sizeof(buf), "V %d", timeToLimit);
@@ -375,11 +408,12 @@ static void cgms_display(uint32_t isig){
         #endif
         #ifdef PEBBLE_ROUND
         if((abs((int)readingSlope)==0) && (abs((int)(readingSlope*10)%10)==0)){
-          snprintf(testbuf, sizeof(testbuf), " ---\n%lu", slope);
-        }else{
-          snprintf(testbuf, sizeof(testbuf), "%c%d.%d\n%lu", sign,abs((int)readingSlope),abs((int)(readingSlope*10)%10),slope);
+             snprintf(testbuf, sizeof(testbuf), " ---\n%d", (int)slope);
+        }else{         
+             snprintf(testbuf, sizeof(testbuf), "%c%d.%d\n%d", sign,abs((int)readingSlope),abs((int)(readingSlope*10)%10),(int)slope);
         }
-        snprintf(glucbuf, sizeof(glucbuf), "%lu",currentGlucose);
+        
+        snprintf(glucbuf, sizeof(glucbuf), "%d",(int)currentGlucose);
         if(timeToLimit<99){
           snprintf(buf, sizeof(buf), "%c%d", sign,timeToLimit);
         } else {
@@ -391,13 +425,7 @@ static void cgms_display(uint32_t isig){
         
         text_layer_set_text(glucose_layer, glucbuf);
         text_layer_set_text(test_layer, testbuf);
-       
-        
-        //debug
-        //snprintf(debugbuf,sizeof(debugbuf), "%lu %i",readings_arr[0].minutes,readings_arr[0].glucose);
-        //text_layer_set_text(debug_layer, debugbuf);
-        //
-        APP_LOG(APP_LOG_LEVEL_DEBUG, "Calc GLUCOSE %lu", currentGlucose);
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Calc GLUCOSE %d", (int)currentGlucose);
       }
 }
 
@@ -413,7 +441,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Calling Alerts");
       sensor_miss_count = 0;
       readingAdded = true;
-      text_layer_set_text(alert_layer, "   ");
+      //text_layer_set_text(alert_layer, "   ");
       last_reading = this_reading;
       break;
     //if we get a slope and intercept
@@ -424,7 +452,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       if(slopecount>SLOPE_OVERRIDE){
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Slope KEY");
         slope = (new_tuple->value->int32);
-        APP_LOG(APP_LOG_LEVEL_DEBUG, "Slope %lu", slope);
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Slope %d", slope);
         //persist_write_int(SLOPEKEY, slope);
       }
       break;
@@ -432,11 +460,13 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       if(slopecount>SLOPE_OVERRIDE){
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Intercept KEY");
         intercept = (new_tuple->value->uint32);
-        APP_LOG(APP_LOG_LEVEL_DEBUG, "Intercept %lu", intercept);
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Intercept %d", intercept);
         //persist_write_int(INTERCEPTKEY, intercept);
       }
       break;
     case isigKey:
+      text_layer_set_text(alert_layer, "   ");
+      miss_count=0;
       cgms_display(new_tuple->value->uint32);
       break;
   }
@@ -448,6 +478,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   //this also seems to get called when ios connects
   //not just every minute...
   miss_count++;
+
   if (sleepCount>0){
     sleepCount--;
   }
@@ -468,6 +499,9 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   //
   #ifdef PEBBLE_ROUND
   layer_mark_dirty(window_get_root_layer(s_main_window));
+  #endif
+  #ifdef TESTING
+   cgms_display(140000);
   #endif
 }
 
@@ -500,51 +534,6 @@ static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
 }
 
-
-static void menu_select_callback(int index, void *ctx){
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "menu select callback");
-  if( s_first_menu_items[index].subtitle==NULL){
-    s_first_menu_items[index].subtitle="Selected";
-  }else{
-    s_first_menu_items[index].subtitle=NULL;
-  }
-  
-  if (*s_first_menu_items[index].title=='E'){
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "enter was selected");
-    for (int i=1;i<15;i++){
-      if(s_first_menu_items[i].subtitle!=NULL && *s_first_menu_items[i].subtitle=='S'){
-        APP_LOG(APP_LOG_LEVEL_DEBUG, s_first_menu_items[i].title);
-        //
-        slopecount=0;
-        if(*s_first_menu_items[i].title=='R'){
-          resetCal();
-          break;
-        }else if (*s_first_menu_items[i].title=='Z'){
-          sleepCount=15; 
-          break;
-        }else{
-          //its a calibration
-          calibrate(atoi(s_first_menu_items[i].title));
-          break;
-        }
-      }
-    }
-     //reset menu
-      for (int i=0;i<15;i++){
-          s_first_menu_items[i].subtitle=NULL;
-      }
-      //hide the layer now    
-    #ifdef PEBBLE
-    layer_remove_child_layers(text_layer_get_layer(s_time_layer));   
-    #endif
-    #ifdef PEBBLE_ROUND
-    layer_remove_child_layers(text_layer_get_layer(glucose_layer));   
-    #endif
-        
-      window_set_click_config_provider(s_main_window, click_config_provider);
-  }
-  layer_mark_dirty(simple_menu_layer_get_layer(s_simple_menu_layer));
-}
 
 void fill_menu(){
   int i=0;
@@ -704,6 +693,7 @@ static void window_load(Window *window) {
   } else {
     intercept = 30002;
   }
+  
 
   Tuplet initial_values[] = {
     TupletInteger(GLUCOSE_KEY, 0),
@@ -734,8 +724,11 @@ static void window_load(Window *window) {
   // Make sure the time is displayed from the start
   update_time();
   #endif
+  
+  #ifdef TESTING
   //display testing, displays bg 170
-  //cgms_display(150000);
+  cgms_display(150000);
+  #endif
 }
 
 static void window_unload(Window *window) {
@@ -827,8 +820,8 @@ static void deinit() {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "deinit");
   persistReadings();
   persistCalibration();
-  persist(SLOPEKEY, slope);
-  persist(INTERCEPTKEY, intercept);
+  persistC(SLOPEKEY, slope);
+  persistC(INTERCEPTKEY, intercept);
   //
   #ifdef PEBBLE_ROUND
   gpath_destroy(s_minute_arrow);
