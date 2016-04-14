@@ -147,7 +147,7 @@ static void date_update_proc(Layer *layer, GContext *ctx) {
 
     addCalibration(30000, 0);
     slope = 703;
-    intercept = 30003;
+    intercept = 30000;
     addInterceptToMenu();
   }
 
@@ -185,6 +185,7 @@ static void menu_select_callback(int index, void *ctx){
         slopecount=0;
         if(*s_first_menu_items[i].title=='R'){
           resetCal();
+          newCal = false
           break;
         }else if (*s_first_menu_items[i].title=='Z'){
           sleepCount=15; 
@@ -691,7 +692,7 @@ static void window_load(Window *window) {
     // Load stored count
     intercept = persist_read_int(INTERCEPTKEY);
   } else {
-    intercept = 30002;
+    intercept = 30000;
   }
   
 

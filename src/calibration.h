@@ -23,7 +23,7 @@
 #define INTERCEPTKEY 17 
 
 int slope = 705;
-int intercept = 30005;
+int intercept = 30000;
 int tmpSlope;
 int tmpIntercept;
 
