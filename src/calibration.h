@@ -210,6 +210,10 @@ void calcSlopeandInt() {
     persistCalibration();
     persistC(SLOPEKEY,slope);
     persistC(INTERCEPTKEY,intercept);
+    //and again since this doesn't always take
+    persistCalibration();
+    persistC(SLOPEKEY,slope);
+    persistC(INTERCEPTKEY,intercept);
 }
 
 void updateRawcount(long rawcount){
