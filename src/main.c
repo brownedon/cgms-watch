@@ -96,9 +96,9 @@ static void click_config_provider(void *context) ;
   
 //
 static void bg_update_proc(Layer *layer, GContext *ctx) {
-  graphics_context_set_fill_color(ctx, GColorWhite);
-  graphics_fill_rect(ctx, layer_get_bounds(layer), 0, GCornerNone);
   graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, layer_get_bounds(layer), 0, GCornerNone);
+  graphics_context_set_fill_color(ctx, GColorWhite);
   for (int i = 0; i < NUM_CLOCK_TICKS; ++i) {
     const int x_offset = PBL_IF_ROUND_ELSE(18, 0);
     const int y_offset = PBL_IF_ROUND_ELSE(6, 0);
@@ -114,8 +114,8 @@ static void hands_update_proc(Layer *layer, GContext *ctx) {
   struct tm *t = localtime(&now);
   
   // minute/hour hand
-  graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_stroke_color(ctx, GColorBlack);
 
   gpath_rotate_to(s_minute_arrow, TRIG_MAX_ANGLE * t->tm_min / 60);
   gpath_draw_filled(ctx, s_minute_arrow);
@@ -126,7 +126,7 @@ static void hands_update_proc(Layer *layer, GContext *ctx) {
   gpath_draw_outline(ctx, s_hour_arrow);
 
   // dot in the middle
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, GColorBlack);
   graphics_fill_rect(ctx, GRect(bounds.size.w / 2 - 1, bounds.size.h / 2 - 1, 3, 3), 0, GCornerNone);
 }
 
@@ -149,6 +149,9 @@ static void date_update_proc(Layer *layer, GContext *ctx) {
     slope = 703;
     intercept = 30000;
     addInterceptToMenu();
+    
+    persistC(SLOPEKEY,slope);
+    persistC(INTERCEPTKEY,intercept);
   }
 
 void calibrate(int gluc) {
@@ -171,6 +174,15 @@ void calibrate(int gluc) {
 
 static void menu_select_callback(int index, void *ctx){
   APP_LOG(APP_LOG_LEVEL_DEBUG, "menu select callback");
+  addInterceptToMenu();
+  //some debug for when paired with phone
+  //get a dump of the cal array through cloud pebble
+  for (int i = 0; i < 5; i++ ) {
+    if (calibrations_arr[i].rawcounts > 0) {
+      APP_LOG(APP_LOG_LEVEL_DEBUG,"record %i:glucose %i:rawcounts %ld",i,calibrations_arr[i].glucose, calibrations_arr[i].rawcounts);
+    }
+  }
+  
   if( s_first_menu_items[index].subtitle==NULL){
     s_first_menu_items[index].subtitle="Selected";
   }else{
@@ -569,7 +581,7 @@ static void window_load(Window *window) {
   //date layer
   date_layer = text_layer_create(GRect(55, 1, 144, 50));
   text_layer_set_background_color(date_layer, GColorClear);
-  text_layer_set_text_color(date_layer, GColorBlack);
+  text_layer_set_text_color(date_layer, GColorWhite);
   text_layer_set_text(date_layer, "00/00");
   text_layer_set_font(date_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
   text_layer_set_text_alignment(date_layer, GTextAlignmentLeft);
@@ -594,8 +606,8 @@ static void window_load(Window *window) {
     GRect(63, 114, 27, 20),
     GRect(46, 114, 27, 20)));
   text_layer_set_text(s_day_label, s_day_buffer);
-  text_layer_set_background_color(s_day_label, GColorWhite);
-  text_layer_set_text_color(s_day_label, GColorBlack);
+  text_layer_set_background_color(s_day_label, GColorBlack);
+  text_layer_set_text_color(s_day_label, GColorWhite);
   text_layer_set_font(s_day_label, fonts_get_system_font(FONT_KEY_GOTHIC_18));
 
   layer_add_child(s_date_layer, text_layer_get_layer(s_day_label));
@@ -604,8 +616,8 @@ static void window_load(Window *window) {
     GRect(90, 114, 18, 20),
     GRect(73, 114, 18, 20)));
   text_layer_set_text(s_num_label, s_num_buffer);
-  text_layer_set_background_color(s_num_label, GColorWhite);
-  text_layer_set_text_color(s_num_label, GColorBlack);
+  text_layer_set_background_color(s_num_label, GColorBlack);
+  text_layer_set_text_color(s_num_label, GColorWhite);
   text_layer_set_font(s_num_label, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
 
   layer_add_child(s_date_layer, text_layer_get_layer(s_num_label));
@@ -619,14 +631,14 @@ static void window_load(Window *window) {
   #ifdef PEBBLE_ROUND
   test_layer = text_layer_create(GRect(74, 15, 144, 68));
   text_layer_set_background_color(test_layer, GColorClear);
-  text_layer_set_text_color(test_layer, GColorBlack);
+  text_layer_set_text_color(test_layer, GColorWhite);
   text_layer_set_font(test_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
   text_layer_set_text_alignment(test_layer, GTextAlignmentLeft);
   
   //glucose                                x  y
   glucose_layer = text_layer_create(GRect(5, 70, 144, 68));
   text_layer_set_background_color(glucose_layer, GColorClear);
-  text_layer_set_text_color(glucose_layer, GColorBlack);
+  text_layer_set_text_color(glucose_layer, GColorWhite);
   text_layer_set_font(glucose_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(glucose_layer, GTextAlignmentLeft);
   text_layer_set_text(glucose_layer, glucose);
@@ -634,14 +646,14 @@ static void window_load(Window *window) {
   //time to limit
   timetolimit_layer = text_layer_create(GRect(143, 70, 144, 68));
   text_layer_set_background_color(timetolimit_layer, GColorClear);
-  text_layer_set_text_color(timetolimit_layer, GColorBlack);
+  text_layer_set_text_color(timetolimit_layer, GColorWhite);
   text_layer_set_font(timetolimit_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
   text_layer_set_text_alignment(timetolimit_layer, GTextAlignmentLeft);
   
     //alerts
   alert_layer = text_layer_create(GRect(74, 130, 144, 68));
   text_layer_set_background_color(alert_layer, GColorClear);
-  text_layer_set_text_color(alert_layer, GColorBlack);
+  text_layer_set_text_color(alert_layer, GColorWhite);
   text_layer_set_font(alert_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(alert_layer, GTextAlignmentLeft);
   
@@ -651,28 +663,28 @@ static void window_load(Window *window) {
   #ifdef PEBBLE
   test_layer = text_layer_create(GRect(1, 66, 144, 68));
   text_layer_set_background_color(test_layer, GColorClear);
-  text_layer_set_text_color(test_layer, GColorBlack);
+  text_layer_set_text_color(test_layer, GColorWhite);
   text_layer_set_font(test_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
   text_layer_set_text_alignment(test_layer, GTextAlignmentLeft);
   
    //glucose
   glucose_layer = text_layer_create(GRect(10, 90, 144, 68));
   text_layer_set_background_color(glucose_layer, GColorClear);
-  text_layer_set_text_color(glucose_layer, GColorBlack);
+  text_layer_set_text_color(glucose_layer, GColorWhite);
   text_layer_set_font(glucose_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(glucose_layer, GTextAlignmentLeft);
   text_layer_set_text(glucose_layer, glucose);
     //time to limit
   timetolimit_layer = text_layer_create(GRect(10, 130, 144, 68));
   text_layer_set_background_color(timetolimit_layer, GColorClear);
-  text_layer_set_text_color(timetolimit_layer, GColorBlack);
+  text_layer_set_text_color(timetolimit_layer, GColorWhite);
   text_layer_set_font(timetolimit_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(timetolimit_layer, GTextAlignmentLeft);
   
     //alerts
   alert_layer = text_layer_create(GRect(110, 130, 144, 68));
   text_layer_set_background_color(alert_layer, GColorClear);
-  text_layer_set_text_color(alert_layer, GColorBlack);
+  text_layer_set_text_color(alert_layer, GColorWhite);
   text_layer_set_font(alert_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(alert_layer, GTextAlignmentLeft);
   
@@ -770,7 +782,7 @@ static void init() {
   
   s_main_window = window_create();
   window_set_click_config_provider(s_main_window, click_config_provider);
-  window_set_background_color(s_main_window, GColorWhite);
+  window_set_background_color(s_main_window, GColorBlack);
   #ifdef PBL_SDK_2
     window_set_fullscreen(s_main_window, true);
   #endif

@@ -37,6 +37,12 @@ struct calibrations {
 struct calibrations calibrations_arr[5];
 struct calibrations calibration;
 
+void  persistC(int key,long value){
+  while(persist_write_int(key, value)<0){
+    persist_write_int(key,value);
+  }
+}
+
 void initCalibrations() {
   APP_LOG(APP_LOG_LEVEL_DEBUG,"initCalibrations");
   calibration.glucose = 0;
@@ -49,42 +55,27 @@ void initCalibrations() {
   }
 }
 
-void  persistC(int key,long value){
-  while(persist_write_int(key, value)<0){
-    persist_write_int(key,value);
-  }
-}
-
 void persistCalibration() {
   APP_LOG(APP_LOG_LEVEL_DEBUG,"persistCalibration");
-  if (calibrations_arr[0].rawcounts != 0) {
-    persistC(calibrations_glucosekey1, calibrations_arr[0].glucose);
-    persistC(calibrations_secondskey1,  calibrations_arr[0].seconds);
-    persistC(calibrations_rawcountkey1,  calibrations_arr[0].rawcounts);
-  }
+  persistC(calibrations_glucosekey1, calibrations_arr[0].glucose);
+  persistC(calibrations_secondskey1,  calibrations_arr[0].seconds);
+  persistC(calibrations_rawcountkey1,  calibrations_arr[0].rawcounts);
 
-  if (calibrations_arr[1].rawcounts != 0) {
-    persistC(calibrations_glucosekey2, calibrations_arr[1].glucose);
-    persistC(calibrations_secondskey2,  calibrations_arr[1].seconds);
-    persistC(calibrations_rawcountkey2,  calibrations_arr[1].rawcounts);
-  }
+  persistC(calibrations_glucosekey2, calibrations_arr[1].glucose);
+  persistC(calibrations_secondskey2,  calibrations_arr[1].seconds);
+  persistC(calibrations_rawcountkey2,  calibrations_arr[1].rawcounts);
 
-  if (calibrations_arr[2].rawcounts != 0) {
-    persistC(calibrations_glucosekey3, calibrations_arr[2].glucose);
-    persistC(calibrations_secondskey3,  calibrations_arr[2].seconds);
-    persistC(calibrations_rawcountkey3,  calibrations_arr[2].rawcounts);
-  }
-  if (calibrations_arr[3].rawcounts != 0) {
-    persistC(calibrations_glucosekey4, calibrations_arr[3].glucose);
-    persistC(calibrations_secondskey4,  calibrations_arr[3].seconds);
-    persistC(calibrations_rawcountkey4,  calibrations_arr[3].rawcounts);
-  }
+  persistC(calibrations_glucosekey3, calibrations_arr[2].glucose);
+  persistC(calibrations_secondskey3,  calibrations_arr[2].seconds);
+  persistC(calibrations_rawcountkey3,  calibrations_arr[2].rawcounts);
 
-  if (calibrations_arr[4].rawcounts != 0) {
-    persistC(calibrations_glucosekey5, calibrations_arr[4].glucose);
-    persistC(calibrations_secondskey5,  calibrations_arr[4].seconds);
-    persistC(calibrations_rawcountkey5,  calibrations_arr[4].rawcounts);
-  }
+  persistC(calibrations_glucosekey4, calibrations_arr[3].glucose);
+  persistC(calibrations_secondskey4,  calibrations_arr[3].seconds);
+  persistC(calibrations_rawcountkey4,  calibrations_arr[3].rawcounts);
+
+  persistC(calibrations_glucosekey5, calibrations_arr[4].glucose);
+  persistC(calibrations_secondskey5,  calibrations_arr[4].seconds);
+  persistC(calibrations_rawcountkey5,  calibrations_arr[4].rawcounts);
 }
 
 void retrieveCal() {
@@ -139,11 +130,14 @@ void addCalibration(long rawcounts, int glucose) {
     calibrations_arr[0].seconds = sec1;
     calibrations_arr[0].glucose = glucose;
     calibrations_arr[0].rawcounts = rawcounts;
+    
+    persistCalibration();
   }
 }
 
 void getCalSlopeAndIntercept() {
   APP_LOG(APP_LOG_LEVEL_DEBUG,"getCalSlopeAndIntercept");
+  retrieveCal();
   int count = 0;
   double sumx = 0.0, sumy = 0.0, sum1 = 0.0, sum2 = 0.0;
 
@@ -196,7 +190,7 @@ void calcSlopeandInt() {
         addCalibration(tmpRawcount, tmpGlucose);
         getCalSlopeAndIntercept();
         //
-       APP_LOG(APP_LOG_LEVEL_DEBUG,"Cal %d:%d",tmpSlope,tmpIntercept);
+       //APP_LOG(APP_LOG_LEVEL_DEBUG,"Cal %d:%d",tmpSlope,tmpIntercept);
         if ((tmpSlope > 300 && tmpSlope < 2000) && (tmpIntercept < 60000 && tmpIntercept > 10000)) {
             slope = tmpSlope;
             intercept = tmpIntercept;
@@ -210,12 +204,9 @@ void calcSlopeandInt() {
     persistCalibration();
     persistC(SLOPEKEY,slope);
     persistC(INTERCEPTKEY,intercept);
-    //and again since this doesn't always take
-    persistCalibration();
-    persistC(SLOPEKEY,slope);
-    persistC(INTERCEPTKEY,intercept);
 }
 
 void updateRawcount(long rawcount){
   calibrations_arr[0].rawcounts = rawcount;
+  persistCalibration();
 }
