@@ -3,11 +3,18 @@
  * Sets up the Window, ClickConfigProvider and ClickHandlers.
  */
 
+//Using smartstrap for limited debugging
+//#define SMARTSTRAP 
+
 #include <pebble.h>
 #include <calibration.h>
 #include <readings.h>
 #include <alerts.h>
 #include "simple_analog.h"
+#ifdef SMARTSTRAP
+  #include "strap.h"
+#endif
+
 
 static Window *s_main_window;
 //number of slope values to accept from iphone
@@ -29,13 +36,14 @@ static TextLayer *s_time_layer;
 static TextLayer *date_layer;
 static TextLayer *alert_layer;
 static TextLayer *debug_layer;
-char buf[5];
+char buf[6];
 char glucbuf[15];
 char testbuf[40];
 char debugbuf[30];
 
 //needs global scope or it won't show in menu
 char intbuf[6];
+char battbuf[6];
 
 static char glucose[16];
 int slopecount=0;
@@ -67,8 +75,9 @@ enum GlucoseKey {
   GLUCOSE_KEY = 0x1,
   LASTREADING_KEY = 0x5,
   slopeKey = 0x6,
-  interceptKey = 0x7,
-  isigKey = 0x8
+  //interceptKey = 0x7,
+  isigKey = 0x8,
+  battKey =0x7
 };
 
 bool readingAdded = false;
@@ -85,7 +94,7 @@ static SimpleMenuLayer *s_simple_menu_layer;
 static SimpleMenuSection s_menu_sections[1];
 static SimpleMenuItem s_first_menu_items[20];
 
-static char *s_options[17]={"Enter","Reset","Zzz","80","90","100","110","120","130","140","150","160","170","180","190","200","30000"};
+static char *s_options[18]={"Enter","Reset","Zzz","80","90","100","110","120","130","140","150","160","170","180","190","200","30000","999"};
 
 char *menuSelection="";
 //
@@ -93,8 +102,7 @@ char *menuSelection="";
 void addInterceptToMenu();
 
 static void click_config_provider(void *context) ;
-  
-//
+
 static void bg_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, GColorBlack);
   graphics_fill_rect(ctx, layer_get_bounds(layer), 0, GCornerNone);
@@ -252,7 +260,6 @@ void reCalibrate(){
   }
   
 }
-
 
 
 
@@ -416,7 +423,8 @@ static void cgms_display(uint32_t isig){
           sign='-';
         }
         #ifdef PEBBLE
-        snprintf(testbuf, sizeof(testbuf), "%lu %lu %c%d.%d", slope, intercept, sign,abs((int)readingSlope),abs((int)(readingSlope*10)%10));
+         //snprintf(testbuf, sizeof(testbuf), "%lu %lu %c%d.%d", slope, intercept, sign,abs((int)readingSlope),abs((int)(readingSlope*10)%10));
+         snprintf(testbuf, sizeof(testbuf), "%c%d.%d\n%d", sign,abs((int)readingSlope),abs((int)(readingSlope*10)%10),(int)slope);
          text_layer_set_text(timetolimit_layer, buf);
         #endif
         #ifdef PEBBLE_ROUND
@@ -446,6 +454,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
  
   APP_LOG(APP_LOG_LEVEL_DEBUG, "sync_tuple_callback");
   miss_count = 0;
+  
   switch (key) {
     case LASTREADING_KEY:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "LASTREADING KEY");
@@ -454,7 +463,6 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Calling Alerts");
       sensor_miss_count = 0;
       readingAdded = true;
-      //text_layer_set_text(alert_layer, "   ");
       last_reading = this_reading;
       break;
     //if we get a slope and intercept
@@ -469,19 +477,16 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         //persist_write_int(SLOPEKEY, slope);
       }
       break;
-    case interceptKey:
-      if(slopecount>SLOPE_OVERRIDE){
-        APP_LOG(APP_LOG_LEVEL_DEBUG, "Intercept KEY");
-        intercept = (new_tuple->value->uint32);
-        APP_LOG(APP_LOG_LEVEL_DEBUG, "Intercept %d", intercept);
-        //persist_write_int(INTERCEPTKEY, intercept);
-      }
-      break;
     case isigKey:
       text_layer_set_text(alert_layer, "   ");
       miss_count=0;
       cgms_display(new_tuple->value->uint32);
       break;
+    case battKey:
+        APP_LOG(APP_LOG_LEVEL_DEBUG,"add battery to menu");
+        snprintf(battbuf, sizeof(battbuf), "B=%d",(int)new_tuple->value->int32);
+        s_first_menu_items[17].title=battbuf;
+        break;
   }
 }
 
@@ -496,6 +501,9 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     sleepCount--;
   }
   APP_LOG(APP_LOG_LEVEL_DEBUG, "In tick handler %i, %i", miss_count, sensor_miss_count);
+  #ifdef SMARTSTRAP
+    strap_request_data("In tick handler") ;
+  #endif
   if (miss_count > 6) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "One Miss recorded");
     text_layer_set_text(alert_layer, "  !");
@@ -516,6 +524,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   #ifdef TESTING
    cgms_display(140000);
   #endif
+
 }
 
 
@@ -712,8 +721,9 @@ static void window_load(Window *window) {
     TupletInteger(GLUCOSE_KEY, 0),
     TupletInteger(LASTREADING_KEY, 0),
     TupletInteger(slopeKey, slope),
-    TupletInteger(interceptKey, intercept),
-    TupletInteger(isigKey, 0)
+   // TupletInteger(interceptKey, intercept),
+    TupletInteger(isigKey, 0),
+    TupletInteger(battKey, 0)
   };
 
   app_sync_init(&sync, sync_buffer, sizeof(sync_buffer), initial_values, ARRAY_LENGTH(initial_values),
@@ -728,7 +738,6 @@ static void window_load(Window *window) {
   layer_add_child(window_layer, text_layer_get_layer(glucose_layer));
   layer_add_child(window_layer, text_layer_get_layer(timetolimit_layer));
   layer_add_child(window_layer, text_layer_get_layer(alert_layer));
-  //layer_add_child(window_layer, text_layer_get_layer(debug_layer));
 
   miss_count = 0;
   sensor_miss_count = 0;
@@ -779,6 +788,12 @@ static void init() {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "init");
   retrieveReadings();
   retrieveCal(); 
+  //
+  #ifdef SMARTSTRAP
+    strap_init();
+  #endif
+  //app_timer_register(1000, timer_handler, NULL);
+  //
   
   s_main_window = window_create();
   window_set_click_config_provider(s_main_window, click_config_provider);
