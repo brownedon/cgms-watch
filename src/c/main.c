@@ -3,30 +3,31 @@
  * Sets up the Window, ClickConfigProvider and ClickHandlers.
  */
 
+#include <pebble.h>
+#include "calibration.h"
+#include "readings.h"
+#include "alerts.h"
+#include "simple_analog.h"
+
+//for testing in emulator
+//#define TESTING
+
+
 //Using smartstrap for limited debugging
 //#define SMARTSTRAP 
-
-#include <pebble.h>
-#include <calibration.h>
-#include <readings.h>
-#include <alerts.h>
-#include "simple_analog.h"
 #ifdef SMARTSTRAP
   #include "strap.h"
 #endif
 
+static Window *CalWindow;
+static Layer *CalChromeLayer;
+static TextLayer *CalTextLayer;
 
 static Window *s_main_window;
 //number of slope values to accept from iphone
 //before overwriting stored slope and intercept
 int SLOPE_OVERRIDE=100;
 
-//for testing in emulator
-//#define TESTING
-
-//PEBBLE or PEBBLE_ROUND
-//#define PEBBLE
-#define PEBBLE_ROUND
 #define _DATE_BUF_LEN 26
 #define DATE_FORMAT "%l %B %e %T"
 static TextLayer *glucose_layer;
@@ -75,7 +76,6 @@ enum GlucoseKey {
   GLUCOSE_KEY = 0x1,
   LASTREADING_KEY = 0x5,
   slopeKey = 0x6,
-  //interceptKey = 0x7,
   isigKey = 0x8,
   battKey =0x7
 };
@@ -106,7 +106,7 @@ static void click_config_provider(void *context) ;
 static void bg_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, GColorBlack);
   graphics_fill_rect(ctx, layer_get_bounds(layer), 0, GCornerNone);
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, GColorRed);
   for (int i = 0; i < NUM_CLOCK_TICKS; ++i) {
     const int x_offset = PBL_IF_ROUND_ELSE(18, 0);
     const int y_offset = PBL_IF_ROUND_ELSE(6, 0);
@@ -199,7 +199,7 @@ static void menu_select_callback(int index, void *ctx){
   
   if (*s_first_menu_items[index].title=='E'){
     APP_LOG(APP_LOG_LEVEL_DEBUG, "enter was selected");
-    for (int i=1;i<15;i++){
+    for (int i=1;i<16;i++){
       if(s_first_menu_items[i].subtitle!=NULL && *s_first_menu_items[i].subtitle=='S'){
         //
         slopecount=0;
@@ -218,18 +218,11 @@ static void menu_select_callback(int index, void *ctx){
       }
     }
      //reset menu
-      for (int i=0;i<15;i++){
+      for (int i=0;i<16;i++){
           s_first_menu_items[i].subtitle=NULL;
       }
-      //hide the layer now    
-    #ifdef PEBBLE
-    layer_remove_child_layers(text_layer_get_layer(s_time_layer));   
-    #endif
-    #ifdef PEBBLE_ROUND
-    layer_remove_child_layers(text_layer_get_layer(glucose_layer));   
-    #endif
-        
-      window_set_click_config_provider(s_main_window, click_config_provider);
+
+    window_stack_pop(false);
   }
   layer_mark_dirty(simple_menu_layer_get_layer(s_simple_menu_layer));
 }
@@ -244,18 +237,18 @@ void addInterceptToMenu(){
 
 
 void reCalibrate(){
+  APP_LOG(APP_LOG_LEVEL_DEBUG,"reCalibrate");
     APP_LOG(APP_LOG_LEVEL_DEBUG,"CurrentTime %ld",(readings_arr[0].minutes));
     APP_LOG(APP_LOG_LEVEL_DEBUG,"CalTime %ld",calTime);
-    if ( readings_arr[0].minutes  - calTime > 16) { //16 minutes missed readings, clear it
+    if ( readings_arr[0].minutes  - calTime > 20 && newCal) { //16 minutes missed readings, clear it
       newCal = false;
     }
    
-   if (readings_arr[0].minutes  - calTime > 11) { //11 minutes
+   if (readings_arr[0].minutes  - calTime > 11 && newCal) { //11 minutes
       APP_LOG(APP_LOG_LEVEL_DEBUG,"Recalc");
       newCal = false;
       updateRawcount(readings_arr[0].rawcounts);
       calcSlopeandInt();
-     
       addInterceptToMenu();
   }
   
@@ -422,12 +415,7 @@ static void cgms_display(uint32_t isig){
         if (readingSlope<0){
           sign='-';
         }
-        #ifdef PEBBLE
-         //snprintf(testbuf, sizeof(testbuf), "%lu %lu %c%d.%d", slope, intercept, sign,abs((int)readingSlope),abs((int)(readingSlope*10)%10));
-         snprintf(testbuf, sizeof(testbuf), "%c%d.%d\n%d", sign,abs((int)readingSlope),abs((int)(readingSlope*10)%10),(int)slope);
-         text_layer_set_text(timetolimit_layer, buf);
-        #endif
-        #ifdef PEBBLE_ROUND
+      
         if((abs((int)readingSlope)==0) && (abs((int)(readingSlope*10)%10)==0)){
              snprintf(testbuf, sizeof(testbuf), " ---\n%d", (int)slope);
         }else{         
@@ -441,8 +429,6 @@ static void cgms_display(uint32_t isig){
           snprintf(buf, sizeof(buf), "    ");
         }
         text_layer_set_text(timetolimit_layer, buf);
-        #endif
-        //
         
         text_layer_set_text(glucose_layer, glucbuf);
         text_layer_set_text(test_layer, testbuf);
@@ -453,7 +439,6 @@ static void cgms_display(uint32_t isig){
 static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
  
   APP_LOG(APP_LOG_LEVEL_DEBUG, "sync_tuple_callback");
-  miss_count = 0;
   
   switch (key) {
     case LASTREADING_KEY:
@@ -504,7 +489,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   #ifdef SMARTSTRAP
     strap_request_data("In tick handler") ;
   #endif
-  if (miss_count > 6) {
+  if (miss_count > 6 && miss_count<=11) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "One Miss recorded");
     text_layer_set_text(alert_layer, "  !");
   }
@@ -512,21 +497,17 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Miss recorded");
     vibes_enqueue_custom_pattern(pat);
     text_layer_set_text(alert_layer, " !!");
-    miss_count = 0;
   }
-  #ifdef PEBBLE
-  update_time();
-  #endif
-  //
-  #ifdef PEBBLE_ROUND
+
   layer_mark_dirty(window_get_root_layer(s_main_window));
-  #endif
+
   #ifdef TESTING
-   cgms_display(140000);
+   //cgms_display(80000); // 71mg/dl
+   cgms_display(70000);  //56 mg/dl
+   miss_count=0;
   #endif
 
 }
-
 
 static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "up_click_handler");
@@ -534,14 +515,7 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
 
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "select_click_handler");
-   s_simple_menu_layer=simple_menu_layer_create(GRect(50,1,100, 50),s_main_window,s_menu_sections,1,NULL);
-  #ifdef PEBBLE_ROUND
-   layer_add_child( text_layer_get_layer(glucose_layer),simple_menu_layer_get_layer(s_simple_menu_layer));
-  #endif
-  #ifdef PEBBLE
-   layer_add_child( text_layer_get_layer(s_time_layer),simple_menu_layer_get_layer(s_simple_menu_layer));
-  #endif
-  
+  window_stack_push(CalWindow, false /* Not animated */);
 }
 
 static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
@@ -552,10 +526,13 @@ static void click_config_provider(void *context) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "click_config_provider");
   // Register the ClickHandlers
   window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
-  window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
+  window_long_click_subscribe(BUTTON_ID_SELECT, 0,(ClickHandler)select_click_handler,NULL);
   window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
 }
 
+static void displayCal(void) {
+  window_stack_push(CalWindow, false /* Not animated */);
+}
 
 void fill_menu(){
   int i=0;
@@ -578,29 +555,7 @@ static void window_load(Window *window) {
     .items = s_first_menu_items
   };
   
-  #ifdef PEBBLE
-  //clock
-  // Create time TextLayer
-  s_time_layer = text_layer_create(GRect(1, 25, 144, 50));
-  text_layer_set_text(s_time_layer, "00:00");
-  text_layer_set_font(s_time_layer, fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD));
-  text_layer_set_text_alignment(s_time_layer, GTextAlignmentLeft);
 
-
-  //date layer
-  date_layer = text_layer_create(GRect(55, 1, 144, 50));
-  text_layer_set_background_color(date_layer, GColorClear);
-  text_layer_set_text_color(date_layer, GColorWhite);
-  text_layer_set_text(date_layer, "00/00");
-  text_layer_set_font(date_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
-  text_layer_set_text_alignment(date_layer, GTextAlignmentLeft);
-  #endif
-  //
-  //
-  
-  
-  #ifdef PEBBLE_ROUND
-  //analog watch
   GRect bounds = layer_get_bounds(window_layer);
 
   s_simple_bg_layer = layer_create(bounds);
@@ -634,10 +589,8 @@ static void window_load(Window *window) {
   s_hands_layer = layer_create(bounds);
   layer_set_update_proc(s_hands_layer, hands_update_proc);
   layer_add_child(window_layer, s_hands_layer);
-  #endif
 
   
-  #ifdef PEBBLE_ROUND
   test_layer = text_layer_create(GRect(74, 15, 144, 68));
   text_layer_set_background_color(test_layer, GColorClear);
   text_layer_set_text_color(test_layer, GColorWhite);
@@ -665,41 +618,6 @@ static void window_load(Window *window) {
   text_layer_set_text_color(alert_layer, GColorWhite);
   text_layer_set_font(alert_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(alert_layer, GTextAlignmentLeft);
-  
-  #endif
-  
-
-  #ifdef PEBBLE
-  test_layer = text_layer_create(GRect(1, 66, 144, 68));
-  text_layer_set_background_color(test_layer, GColorClear);
-  text_layer_set_text_color(test_layer, GColorWhite);
-  text_layer_set_font(test_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
-  text_layer_set_text_alignment(test_layer, GTextAlignmentLeft);
-  
-   //glucose
-  glucose_layer = text_layer_create(GRect(10, 90, 144, 68));
-  text_layer_set_background_color(glucose_layer, GColorClear);
-  text_layer_set_text_color(glucose_layer, GColorWhite);
-  text_layer_set_font(glucose_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
-  text_layer_set_text_alignment(glucose_layer, GTextAlignmentLeft);
-  text_layer_set_text(glucose_layer, glucose);
-    //time to limit
-  timetolimit_layer = text_layer_create(GRect(10, 130, 144, 68));
-  text_layer_set_background_color(timetolimit_layer, GColorClear);
-  text_layer_set_text_color(timetolimit_layer, GColorWhite);
-  text_layer_set_font(timetolimit_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
-  text_layer_set_text_alignment(timetolimit_layer, GTextAlignmentLeft);
-  
-    //alerts
-  alert_layer = text_layer_create(GRect(110, 130, 144, 68));
-  text_layer_set_background_color(alert_layer, GColorClear);
-  text_layer_set_text_color(alert_layer, GColorWhite);
-  text_layer_set_font(alert_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
-  text_layer_set_text_alignment(alert_layer, GTextAlignmentLeft);
-  
-  #endif
-  
-
 
     
   if (persist_exists(SLOPEKEY)) {
@@ -721,18 +639,12 @@ static void window_load(Window *window) {
     TupletInteger(GLUCOSE_KEY, 0),
     TupletInteger(LASTREADING_KEY, 0),
     TupletInteger(slopeKey, slope),
-   // TupletInteger(interceptKey, intercept),
     TupletInteger(isigKey, 0),
     TupletInteger(battKey, 0)
   };
 
   app_sync_init(&sync, sync_buffer, sizeof(sync_buffer), initial_values, ARRAY_LENGTH(initial_values),
                 sync_tuple_changed_callback, sync_error_callback, NULL);
-
-  #ifdef PEBBLE
-    layer_add_child(window_layer, text_layer_get_layer(s_time_layer));
-    layer_add_child(window_layer, text_layer_get_layer(date_layer));
-  #endif
 
   layer_add_child(window_layer, text_layer_get_layer(test_layer));
   layer_add_child(window_layer, text_layer_get_layer(glucose_layer));
@@ -742,10 +654,34 @@ static void window_load(Window *window) {
   miss_count = 0;
   sensor_miss_count = 0;
   
-  #ifdef PEBBLE
-  // Make sure the time is displayed from the start
-  update_time();
-  #endif
+  //calibration window  
+   CalWindow = window_create();
+  Layer *CalWindow_layer = window_get_root_layer(CalWindow);
+
+  GRect CalWindow_frame = layer_get_frame(CalWindow_layer);
+  CalWindow_frame.origin.x = 5;
+  CalWindow_frame.origin.y = 5;
+  layer_set_frame(CalWindow_layer, CalWindow_frame);
+
+  GRect CalWindow_bounds = layer_get_bounds(window_layer);
+  CalWindow_bounds.size.w -= 10;
+  CalWindow_bounds.size.h -= 10;
+  layer_set_bounds(CalWindow_layer, CalWindow_bounds);
+
+  window_set_background_color(CalWindow, GColorClear);
+
+  CalChromeLayer = layer_create(CalWindow_frame);
+  layer_add_child(CalWindow_layer, CalChromeLayer);
+
+  CalTextLayer = text_layer_create(GRect(20, 20, 110,65));
+  text_layer_set_text_color(CalTextLayer, GColorWhite);
+  text_layer_set_background_color(CalTextLayer, GColorBlack);
+
+  s_simple_menu_layer=simple_menu_layer_create(GRect(20,20,100,50),CalWindow,s_menu_sections,1,NULL);
+  layer_add_child( text_layer_get_layer(CalTextLayer),simple_menu_layer_get_layer(s_simple_menu_layer));
+  layer_add_child(CalWindow_layer, text_layer_get_layer(CalTextLayer));
+  
+  window_set_click_config_provider(s_main_window, click_config_provider);
   
   #ifdef TESTING
   //display testing, displays bg 170
@@ -754,6 +690,7 @@ static void window_load(Window *window) {
 }
 
 static void window_unload(Window *window) {
+   APP_LOG(APP_LOG_LEVEL_DEBUG, "window_unload");
  app_sync_deinit(&sync);
   simple_menu_layer_destroy(s_simple_menu_layer);
   if (icon_bitmap) {
@@ -767,13 +704,12 @@ static void window_unload(Window *window) {
 
   bitmap_layer_destroy(icon_layer);
   
-  #ifdef PEBBLE_ROUND  
+  text_layer_destroy(CalTextLayer);
+  layer_destroy(CalChromeLayer);
+   
   text_layer_destroy(s_time_layer);
   text_layer_destroy(date_layer);
-  #endif
   
-  //analog watch
-  #ifdef PEBBLE_ROUND
   layer_destroy(s_simple_bg_layer);
   layer_destroy(s_date_layer);
 
@@ -781,11 +717,10 @@ static void window_unload(Window *window) {
   text_layer_destroy(s_num_label);
 
   layer_destroy(s_hands_layer);
-  #endif
 }
 
 static void init() {
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "init");
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "init-new");
   retrieveReadings();
   retrieveCal(); 
   //
@@ -796,7 +731,7 @@ static void init() {
   //
   
   s_main_window = window_create();
-  window_set_click_config_provider(s_main_window, click_config_provider);
+    
   window_set_background_color(s_main_window, GColorBlack);
   #ifdef PBL_SDK_2
     window_set_fullscreen(s_main_window, true);
@@ -817,8 +752,7 @@ static void init() {
   const bool animated = true;
   window_stack_push(s_main_window, animated);
   //
-  #ifdef PEBBLE_ROUND
-  //analog clock 
+ 
    s_day_buffer[0] = '\0';
   s_num_buffer[0] = '\0';
 
@@ -836,12 +770,6 @@ static void init() {
     s_tick_paths[i] = gpath_create(&ANALOG_BG_POINTS[i]);
   }
   
-  // tick_timer_service_subscribe(SECOND_UNIT, handle_second_tick);
-  //
-  #endif
-  //
-  //alert user that watch has restarted
-  restartAlert();
 }
 
 static void deinit() {
@@ -850,18 +778,16 @@ static void deinit() {
   persistCalibration();
   persistC(SLOPEKEY, slope);
   persistC(INTERCEPTKEY, intercept);
-  //
-  #ifdef PEBBLE_ROUND
   gpath_destroy(s_minute_arrow);
   gpath_destroy(s_hour_arrow);
 
   for (int i = 0; i < NUM_CLOCK_TICKS; ++i) {
     gpath_destroy(s_tick_paths[i]);
   }
-  #endif
-  //
+
   // Destroy main Window
   window_destroy(s_main_window);
+  window_destroy(CalWindow);
 }
 
 int main(void) {

@@ -1,0 +1,24 @@
+{
+    "author": "brownedon@comcast.net",
+    "dependencies": {},
+    "keywords": [],
+    "name": "cgms-watch",
+    "pebble": {
+        "displayName": "CGMS Watch",
+        "enableMultiJS": false,
+        "messageKeys": [],
+        "projectType": "native",
+        "resources": {
+            "media": []
+        },
+        "sdkVersion": "3",
+        "targetPlatforms": [
+            "chalk"
+        ],
+        "uuid": "7f7a3890-1a1c-43a3-adf1-21449e4f352d",
+        "watchapp": {
+            "watchface": false
+        }
+    },
+    "version": "1.0.0"
+}

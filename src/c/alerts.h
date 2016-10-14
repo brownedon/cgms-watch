@@ -21,10 +21,6 @@ VibePattern pat_restart = {
   .num_segments = ARRAY_LENGTH(segments_restart),
 };
 
-static void restartAlert(){
-  vibes_enqueue_custom_pattern(pat_restart);
-}
-
 //should be called every ~5 minutes
 //triggered by change in reading time from dexcom
 static void alerts(int currentGlucose, int timeToLimit) {
@@ -37,44 +33,48 @@ static void alerts(int currentGlucose, int timeToLimit) {
   }
 
   if (currentGlucose < 80 && alertCount == 0 && currentGlucose > 60) {
-    alertCount++;
-    vibes_enqueue_custom_pattern(pat);
+     APP_LOG(APP_LOG_LEVEL_DEBUG, "between 60 and 80, alert");
+     vibes_enqueue_custom_pattern(pat);
   }
 
-  if (currentGlucose < 80 && alertCount > 0  && currentGlucose > 60) {
+  if (currentGlucose < 80  && currentGlucose > 60) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "between 60 and 80, increment");
     alertCount++;
-    if (alertCount == 3) {
+    if (alertCount >= 2) {
       alertCount = 0;
     }
   }
 
   if (currentGlucose < 60 && alertCount == 0) {
-    alertCount++;
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "below 60, alert");
     vibes_enqueue_custom_pattern(pat);
   }
-  if (currentGlucose < 60 && alertCount > 0) {
+  
+  if (currentGlucose < 60) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "below 60, increment");
     alertCount++;
-    if (alertCount == 2) {
+    if (alertCount >= 1) {
       alertCount = 0;
     }
   }
 
   if (currentGlucose > 180 && alertCount == 0)
   {
-    alertCount++;
     vibes_enqueue_custom_pattern(pat);
   }
 
+  if (currentGlucose > 180 ) {
+    alertCount++;
+    if (alertCount >= 24) {
+      alertCount = 0;
+    }
+  }
+  
   //quick alert whenever predicted to be at high or low limit
   if (timeToLimit == 1)
   {
     vibes_enqueue_custom_pattern(pat_short);
   }
 
-  if (currentGlucose > 180 && alertCount > 0) {
-    alertCount++;
-    if (alertCount == 24) {
-      alertCount = 0;
-    }
-  }
+ 
 }
