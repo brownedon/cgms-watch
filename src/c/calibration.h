@@ -43,17 +43,7 @@ void  persistC(int key,long value){
   }
 }
 
-void initCalibrations() {
-  APP_LOG(APP_LOG_LEVEL_DEBUG,"initCalibrations");
-  calibration.glucose = 0;
-  calibration.rawcounts = 0;
-  calibration.seconds = 0;
-  for (int i = 0; i < 5; i++ ) {
-    calibrations_arr[i].glucose = calibration.glucose;
-    calibrations_arr[i].rawcounts = calibration.rawcounts;
-    calibrations_arr[i].seconds = calibration.seconds;
-  }
-}
+
 
 void persistCalibration() {
   APP_LOG(APP_LOG_LEVEL_DEBUG,"persistCalibration");
@@ -76,6 +66,19 @@ void persistCalibration() {
   persistC(calibrations_glucosekey5, calibrations_arr[4].glucose);
   persistC(calibrations_secondskey5,  calibrations_arr[4].seconds);
   persistC(calibrations_rawcountkey5,  calibrations_arr[4].rawcounts);
+}
+
+void initCalibrations() {
+  APP_LOG(APP_LOG_LEVEL_DEBUG,"initCalibrations");
+  calibration.glucose = 0;
+  calibration.rawcounts = 0;
+  calibration.seconds = 0;
+  for (int i = 0; i < 5; i++ ) {
+    calibrations_arr[i].glucose = calibration.glucose;
+    calibrations_arr[i].rawcounts = calibration.rawcounts;
+    calibrations_arr[i].seconds = calibration.seconds;
+  }
+  persistCalibration();
 }
 
 void retrieveCal() {
@@ -201,12 +204,14 @@ void calcSlopeandInt() {
            retrieveCal();
         }
     }
-    persistCalibration();
-    persistC(SLOPEKEY,slope);
-    persistC(INTERCEPTKEY,intercept);
+    //persistCalibration();
+    //persistC(SLOPEKEY,slope);
+    //persistC(INTERCEPTKEY,intercept);
 }
 
 void updateRawcount(long rawcount){
   calibrations_arr[0].rawcounts = rawcount;
   persistCalibration();
+  persistC(SLOPEKEY,slope);
+  persistC(INTERCEPTKEY,intercept);
 }

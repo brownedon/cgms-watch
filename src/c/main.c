@@ -36,7 +36,7 @@ static TextLayer *timetolimit_layer;
 static TextLayer *s_time_layer;
 static TextLayer *date_layer;
 static TextLayer *alert_layer;
-static TextLayer *debug_layer;
+//static TextLayer *debug_layer;
 char buf[6];
 char glucbuf[15];
 char testbuf[40];
@@ -102,6 +102,30 @@ char *menuSelection="";
 void addInterceptToMenu();
 
 static void click_config_provider(void *context) ;
+
+static void getSlopeAndInt(){
+   APP_LOG(APP_LOG_LEVEL_DEBUG,"getSlopeAndInt");
+  int calCount=0;
+   retrieveCal();
+  
+  for (int i = 4; i > 0; i-- ) {
+    if (calibrations_arr[i].rawcounts>0){
+      calCount++;
+    }
+  }
+
+   APP_LOG(APP_LOG_LEVEL_DEBUG,"calCount is %i",calCount);
+  if (calCount>0){
+     APP_LOG(APP_LOG_LEVEL_DEBUG,"Calc slope and int");
+    calcSlopeandInt();
+  }else{
+    //APP_LOG(APP_LOG_LEVEL_DEBUG,"Use defaults");
+    slope=700;
+    intercept=30000;
+  }
+  
+}
+
 
 static void bg_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, GColorBlack);
@@ -180,6 +204,7 @@ void calibrate(int gluc) {
     }
 }
 
+
 static void menu_select_callback(int index, void *ctx){
   APP_LOG(APP_LOG_LEVEL_DEBUG, "menu select callback");
   addInterceptToMenu();
@@ -212,7 +237,9 @@ static void menu_select_callback(int index, void *ctx){
           break;
         }else{
           //its a calibration
-          calibrate(atoi(s_first_menu_items[i].title));
+            if(i>=3 && i<=15){
+              calibrate(atoi(s_first_menu_items[i].title));
+            }
           break;
         }
       }
@@ -226,7 +253,6 @@ static void menu_select_callback(int index, void *ctx){
   }
   layer_mark_dirty(simple_menu_layer_get_layer(s_simple_menu_layer));
 }
-
 
 void addInterceptToMenu(){
   APP_LOG(APP_LOG_LEVEL_DEBUG,"add addInterceptToMenu");
@@ -299,7 +325,7 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
 
 
 
-static void update_time() {
+/*static void update_time() {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "update_time");
   // Get a tm structure
   time_t temp = time(NULL);
@@ -320,10 +346,19 @@ static void update_time() {
   text_layer_set_text(date_layer, buffer1);
 
 
-}
+}*/
 
 static void cgms_display(uint32_t isig){
    int timeToLimit=100;
+   int tmpSlope=slope;
+  
+   getSlopeAndInt();
+  
+   //slope changed alert user
+   if(slope!=tmpSlope){ 
+     vibes_enqueue_custom_pattern(pat);
+   }
+  
       APP_LOG(APP_LOG_LEVEL_DEBUG, "ISIG KEY");
     //  isig = (new_tuple->value->uint32);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "ISIG %d", (int)isig);
@@ -530,9 +565,10 @@ static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
 }
 
-static void displayCal(void) {
-  window_stack_push(CalWindow, false /* Not animated */);
-}
+
+//static void displayCal(void) {
+//  window_stack_push(CalWindow, false /* Not animated */);
+//}
 
 void fill_menu(){
   int i=0;
@@ -619,21 +655,7 @@ static void window_load(Window *window) {
   text_layer_set_font(alert_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(alert_layer, GTextAlignmentLeft);
 
-    
-  if (persist_exists(SLOPEKEY)) {
-    // Load stored count
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "Using stored slope");
-    slope = persist_read_int(SLOPEKEY);
-  } else {
-    slope = 702;
-  }
-  if (persist_exists(INTERCEPTKEY)) {
-    // Load stored count
-    intercept = persist_read_int(INTERCEPTKEY);
-  } else {
-    intercept = 30000;
-  }
-  
+  getSlopeAndInt();
 
   Tuplet initial_values[] = {
     TupletInteger(GLUCOSE_KEY, 0),
