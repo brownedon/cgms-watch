@@ -130,7 +130,7 @@ static void getSlopeAndInt(){
 static void bg_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, GColorBlack);
   graphics_fill_rect(ctx, layer_get_bounds(layer), 0, GCornerNone);
-  graphics_context_set_fill_color(ctx, GColorRed);
+  graphics_context_set_fill_color(ctx, GColorWhite);
   for (int i = 0; i < NUM_CLOCK_TICKS; ++i) {
     const int x_offset = PBL_IF_ROUND_ELSE(18, 0);
     const int y_offset = PBL_IF_ROUND_ELSE(6, 0);
@@ -324,34 +324,10 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
 }
 
 
-
-/*static void update_time() {
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "update_time");
-  // Get a tm structure
-  time_t temp = time(NULL);
-  struct tm *tick_time = localtime(&temp);
-
-  // Create a long-lived buffer
-  static char buffer[] = "00:00";
-  static char buffer1[] = "Mon     00:00";
-  // Write the current hours and minutes into the buffer
-  //Use 12 hour format
-  strftime(buffer,  sizeof("00:00"), "%l:%M", tick_time);
-
-  // Display this time on the TextLayer
-  text_layer_set_text(s_time_layer, buffer);
-
-  strftime(buffer1,  sizeof("Mon  00/00"), "%a  %m/%e", tick_time);
-  // Display this time on the TextLayer
-  text_layer_set_text(date_layer, buffer1);
-
-
-}*/
-
 static void cgms_display(uint32_t isig){
    int timeToLimit=100;
    int tmpSlope=slope;
-  
+   APP_LOG(APP_LOG_LEVEL_DEBUG, "cgms_display");
    getSlopeAndInt();
   
    //slope changed alert user
@@ -419,8 +395,10 @@ static void cgms_display(uint32_t isig){
           timeToLimit = 1;
         }
 
-        //timeToLimit=10;
-        //readingSlope=2;
+        #ifdef TESTING
+        timeToLimit=10;
+        readingSlope=2;
+        #endif
         
         if (timeToLimit < 99) {
           if (readingSlope < 0) {
@@ -476,27 +454,6 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
   APP_LOG(APP_LOG_LEVEL_DEBUG, "sync_tuple_callback");
   
   switch (key) {
-    case LASTREADING_KEY:
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "LASTREADING KEY");
-      this_reading = (new_tuple->value->int32);
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "%lu %lu", this_reading, last_reading);
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Calling Alerts");
-      sensor_miss_count = 0;
-      readingAdded = true;
-      last_reading = this_reading;
-      break;
-    //if we get a slope and intercept
-    //from the iphone use it
-    //otherwise we are stand alone
-    case slopeKey:
-      slopecount++;
-      if(slopecount>SLOPE_OVERRIDE){
-        APP_LOG(APP_LOG_LEVEL_DEBUG, "Slope KEY");
-        slope = (new_tuple->value->int32);
-        APP_LOG(APP_LOG_LEVEL_DEBUG, "Slope %d", slope);
-        //persist_write_int(SLOPEKEY, slope);
-      }
-      break;
     case isigKey:
       text_layer_set_text(alert_layer, "   ");
       miss_count=0;
@@ -537,8 +494,8 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   layer_mark_dirty(window_get_root_layer(s_main_window));
 
   #ifdef TESTING
-   //cgms_display(80000); // 71mg/dl
-   cgms_display(70000);  //56 mg/dl
+   cgms_display(80000); // 71mg/dl
+   //cgms_display(70000);  //56 mg/dl
    miss_count=0;
   #endif
 
@@ -591,7 +548,6 @@ static void window_load(Window *window) {
     .items = s_first_menu_items
   };
   
-
   GRect bounds = layer_get_bounds(window_layer);
 
   s_simple_bg_layer = layer_create(bounds);
@@ -601,40 +557,46 @@ static void window_load(Window *window) {
   s_date_layer = layer_create(bounds);
   layer_set_update_proc(s_date_layer, date_update_proc);
   layer_add_child(window_layer, s_date_layer);
-
+ 
   s_day_label = text_layer_create(PBL_IF_ROUND_ELSE(
     GRect(63, 114, 27, 20),
-    GRect(46, 114, 27, 20)));
+    GRect(50, 100, 27, 20)));
   text_layer_set_text(s_day_label, s_day_buffer);
   text_layer_set_background_color(s_day_label, GColorBlack);
   text_layer_set_text_color(s_day_label, GColorWhite);
   text_layer_set_font(s_day_label, fonts_get_system_font(FONT_KEY_GOTHIC_18));
-
+ 
   layer_add_child(s_date_layer, text_layer_get_layer(s_day_label));
 
   s_num_label = text_layer_create(PBL_IF_ROUND_ELSE(
     GRect(90, 114, 18, 20),
-    GRect(73, 114, 18, 20)));
+    GRect(73, 100, 18, 20)));
+   
   text_layer_set_text(s_num_label, s_num_buffer);
   text_layer_set_background_color(s_num_label, GColorBlack);
   text_layer_set_text_color(s_num_label, GColorWhite);
   text_layer_set_font(s_num_label, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
-
   layer_add_child(s_date_layer, text_layer_get_layer(s_num_label));
 
   s_hands_layer = layer_create(bounds);
   layer_set_update_proc(s_hands_layer, hands_update_proc);
   layer_add_child(window_layer, s_hands_layer);
-
   
-  test_layer = text_layer_create(GRect(74, 15, 144, 68));
+  test_layer = text_layer_create(PBL_IF_ROUND_ELSE(
+    GRect(74, 15, 144, 68),
+    GRect(57, 15, 144, 68)));
+  
   text_layer_set_background_color(test_layer, GColorClear);
   text_layer_set_text_color(test_layer, GColorWhite);
   text_layer_set_font(test_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
   text_layer_set_text_alignment(test_layer, GTextAlignmentLeft);
   
   //glucose                                x  y
-  glucose_layer = text_layer_create(GRect(5, 70, 144, 68));
+  //glucose_layer = text_layer_create(GRect(5, 70, 144, 68));
+  glucose_layer = text_layer_create(PBL_IF_ROUND_ELSE(
+    GRect(5, 70, 144, 68),
+    GRect(1, 70, 144, 68)));
+  
   text_layer_set_background_color(glucose_layer, GColorClear);
   text_layer_set_text_color(glucose_layer, GColorWhite);
   text_layer_set_font(glucose_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
@@ -642,19 +604,24 @@ static void window_load(Window *window) {
   text_layer_set_text(glucose_layer, glucose);
   
   //time to limit
-  timetolimit_layer = text_layer_create(GRect(143, 70, 144, 68));
+   timetolimit_layer = text_layer_create(PBL_IF_ROUND_ELSE(
+    GRect(143, 70, 144, 68),
+    GRect(110, 70, 144, 68)));
+  
   text_layer_set_background_color(timetolimit_layer, GColorClear);
   text_layer_set_text_color(timetolimit_layer, GColorWhite);
   text_layer_set_font(timetolimit_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
   text_layer_set_text_alignment(timetolimit_layer, GTextAlignmentLeft);
+
+  //alerts
+  alert_layer = text_layer_create(PBL_IF_ROUND_ELSE(
+    GRect(74, 130, 144, 68),
+    GRect(50, 120, 144, 68)));
   
-    //alerts
-  alert_layer = text_layer_create(GRect(74, 130, 144, 68));
   text_layer_set_background_color(alert_layer, GColorClear);
   text_layer_set_text_color(alert_layer, GColorWhite);
   text_layer_set_font(alert_layer, fonts_get_system_font(FONT_KEY_BITHAM_30_BLACK));
   text_layer_set_text_alignment(alert_layer, GTextAlignmentLeft);
-
   getSlopeAndInt();
 
   Tuplet initial_values[] = {
@@ -667,7 +634,6 @@ static void window_load(Window *window) {
 
   app_sync_init(&sync, sync_buffer, sizeof(sync_buffer), initial_values, ARRAY_LENGTH(initial_values),
                 sync_tuple_changed_callback, sync_error_callback, NULL);
-
   layer_add_child(window_layer, text_layer_get_layer(test_layer));
   layer_add_child(window_layer, text_layer_get_layer(glucose_layer));
   layer_add_child(window_layer, text_layer_get_layer(timetolimit_layer));
@@ -691,7 +657,6 @@ static void window_load(Window *window) {
   layer_set_bounds(CalWindow_layer, CalWindow_bounds);
 
   window_set_background_color(CalWindow, GColorClear);
-
   CalChromeLayer = layer_create(CalWindow_frame);
   layer_add_child(CalWindow_layer, CalChromeLayer);
 
@@ -702,7 +667,6 @@ static void window_load(Window *window) {
   s_simple_menu_layer=simple_menu_layer_create(GRect(20,20,100,50),CalWindow,s_menu_sections,1,NULL);
   layer_add_child( text_layer_get_layer(CalTextLayer),simple_menu_layer_get_layer(s_simple_menu_layer));
   layer_add_child(CalWindow_layer, text_layer_get_layer(CalTextLayer));
-  
   window_set_click_config_provider(s_main_window, click_config_provider);
   
   #ifdef TESTING

@@ -13,6 +13,7 @@
         },
         "sdkVersion": "3",
         "targetPlatforms": [
+            "aplite",
             "chalk"
         ],
         "uuid": "7f7a3890-1a1c-43a3-adf1-21449e4f352d",
